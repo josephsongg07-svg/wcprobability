@@ -147,6 +147,25 @@ const buildKnockoutRounds = (models, picks, knockoutPicks) => {
   };
 };
 
+const getMatchFavorite = (match) =>
+  match.teams
+    .filter(Boolean)
+    .sort((a, b) => b.strength - a.strength || (a.bracketSeed ?? 99) - (b.bracketSeed ?? 99))[0];
+
+const getModelKnockoutPicks = (models, picks) => {
+  const knockoutPicks = {};
+
+  for (const roundKey of Object.keys(roundLabels)) {
+    const bracket = buildKnockoutRounds(models, picks, knockoutPicks);
+    bracket.rounds[roundKey].forEach((match) => {
+      const favorite = getMatchFavorite(match);
+      if (favorite) knockoutPicks[match.id] = favorite.code;
+    });
+  }
+
+  return knockoutPicks;
+};
+
 function ProbabilityBar({ rows, teamByCode }) {
   return (
     <div className="prob-stack" aria-label="match probabilities">
@@ -347,7 +366,7 @@ function BracketTeamButton({ match, onPick, team, winnerCode }) {
   );
 }
 
-function KnockoutBracket({ knockoutPicks, models, onClear, onPick, picks }) {
+function KnockoutBracket({ knockoutPicks, models, onAuto, onClear, onPick, picks }) {
   const bracket = useMemo(() => buildKnockoutRounds(models, picks, knockoutPicks), [knockoutPicks, models, picks]);
   const qualifiedThirdCodes = new Set(bracket.thirdPool.slice(0, 8).map((team) => team.code));
 
@@ -363,6 +382,9 @@ function KnockoutBracket({ knockoutPicks, models, onClear, onPick, picks }) {
             <span>Qualified</span>
             <strong>{bracket.qualifiedCount}/32</strong>
           </div>
+          <button type="button" onClick={onAuto}>
+            Run model bracket
+          </button>
           <button type="button" onClick={onClear}>
             Clear knockout
           </button>
@@ -661,6 +683,10 @@ function App() {
     setKnockoutPicks({});
   };
 
+  const handleAutoKnockout = () => {
+    setKnockoutPicks(getModelKnockoutPicks(allModels, picks));
+  };
+
   const handleRegister = () => {
     const cleanName = playerName.trim() || "anonymous";
     const entry = {
@@ -742,6 +768,7 @@ function App() {
           <KnockoutBracket
             knockoutPicks={knockoutPicks}
             models={allModels}
+            onAuto={handleAutoKnockout}
             onClear={handleClearKnockout}
             onPick={handleKnockoutPick}
             picks={picks}
