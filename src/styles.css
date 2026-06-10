@@ -1018,6 +1018,106 @@ meter::-webkit-meter-optimum-value {
   line-height: 1.25;
 }
 
+.third-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.third-team-card {
+  display: grid;
+  gap: 11px;
+  padding: 13px;
+  border: 1px solid #d5dbe3;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.12);
+}
+
+.third-team-card.in {
+  border-color: #a8dac4;
+  background: #f3fbf7;
+}
+
+.third-team-card.out {
+  opacity: 0.82;
+}
+
+.third-team-main {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) 48px;
+  gap: 10px;
+  align-items: center;
+}
+
+.third-team-main img {
+  width: 42px;
+  height: 29px;
+  border: 1px solid #e2e8f0;
+  object-fit: cover;
+}
+
+.third-team-main span,
+.third-team-main small {
+  display: block;
+  overflow: hidden;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.third-team-main strong {
+  display: block;
+  overflow: hidden;
+  color: #111827;
+  font-size: 18px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.third-team-main > b {
+  display: grid;
+  min-height: 34px;
+  place-items: center;
+  border-radius: 8px;
+  background: #e2e8f0;
+  color: #334155;
+  font-size: 12px;
+}
+
+.third-team-card.in .third-team-main > b {
+  background: #0f8a5f;
+  color: #fff;
+}
+
+.third-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.third-controls button {
+  min-height: 36px;
+  border: 1px solid #cfd8e3;
+  border-radius: 8px;
+  background: #fff;
+  color: #334155;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.third-controls button.active {
+  border-color: #0f8a5f;
+  background: #0f8a5f;
+  color: #fff;
+}
+
 .all-groups-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1501,6 +1601,10 @@ meter::-webkit-meter-optimum-value {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .third-selector-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .group-tabs {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }
@@ -1560,6 +1664,7 @@ meter::-webkit-meter-optimum-value {
   .summary-grid,
   .snapshot-grid,
   .all-groups-grid,
+  .third-selector-grid,
   .creator-stats,
   .leaderboard-strip {
     grid-template-columns: 1fr;

@@ -90,7 +90,7 @@ const makeBracketTeam = (models, model, code, source) => {
   };
 };
 
-const getQualifiers = (models, picks) => {
+const getQualifiers = (models, picks, thirdPoolOverrides = {}) => {
   const automatic = [];
   const thirdPool = [];
 
@@ -106,9 +106,13 @@ const getQualifiers = (models, picks) => {
   });
 
   const sortedThirds = [...thirdPool].sort((a, b) => b.tiebreak - a.tiebreak || b.strength - a.strength);
+  const forcedIn = sortedThirds.filter((team) => thirdPoolOverrides[team.code] === "in");
+  const autoEligible = sortedThirds.filter(
+    (team) => thirdPoolOverrides[team.code] !== "in" && thirdPoolOverrides[team.code] !== "out",
+  );
   return {
     automatic,
-    qualifiedThirds: sortedThirds.slice(0, 8),
+    qualifiedThirds: [...forcedIn, ...autoEligible].slice(0, 8),
     thirdPool: sortedThirds,
   };
 };
@@ -136,8 +140,8 @@ const pickWinners = (matches, knockoutPicks) =>
     return match.teams.find((team) => team?.code === selected) ?? null;
   });
 
-const buildKnockoutRounds = (models, picks, knockoutPicks) => {
-  const { automatic, qualifiedThirds, thirdPool } = getQualifiers(models, picks);
+const buildKnockoutRounds = (models, picks, knockoutPicks, thirdPoolOverrides = {}) => {
+  const { automatic, qualifiedThirds, thirdPool } = getQualifiers(models, picks, thirdPoolOverrides);
   const seeded = seedQualifiers([...automatic, ...qualifiedThirds]);
   const padded = [...seeded, ...Array.from({ length: Math.max(0, 32 - seeded.length) }, () => null)];
   const round32 = makeMatches("round32", padded);
@@ -160,11 +164,11 @@ const getMatchFavorite = (match) =>
     .filter(Boolean)
     .sort((a, b) => b.strength - a.strength || (a.bracketSeed ?? 99) - (b.bracketSeed ?? 99))[0];
 
-const getModelKnockoutPicks = (models, picks) => {
+const getModelKnockoutPicks = (models, picks, thirdPoolOverrides = {}) => {
   const knockoutPicks = {};
 
   for (const roundKey of Object.keys(roundLabels)) {
-    const bracket = buildKnockoutRounds(models, picks, knockoutPicks);
+    const bracket = buildKnockoutRounds(models, picks, knockoutPicks, thirdPoolOverrides);
     bracket.rounds[roundKey].forEach((match) => {
       const favorite = getMatchFavorite(match);
       if (favorite) knockoutPicks[match.id] = favorite.code;
@@ -174,8 +178,8 @@ const getModelKnockoutPicks = (models, picks) => {
   return knockoutPicks;
 };
 
-const getBracketHighlights = (models, picks, knockoutPicks) => {
-  const bracket = buildKnockoutRounds(models, picks, knockoutPicks);
+const getBracketHighlights = (models, picks, knockoutPicks, thirdPoolOverrides = {}) => {
+  const bracket = buildKnockoutRounds(models, picks, knockoutPicks, thirdPoolOverrides);
   const finalMatch = bracket.rounds.final[0];
   const champion = bracket.champion;
   const runnerUp = champion ? finalMatch?.teams.find((team) => team && team.code !== champion.code) : null;
@@ -195,8 +199,8 @@ const getBracketHighlights = (models, picks, knockoutPicks) => {
   };
 };
 
-const getKnockoutScoreDetails = (models, picks, knockoutPicks) => {
-  const bracket = buildKnockoutRounds(models, picks, knockoutPicks);
+const getKnockoutScoreDetails = (models, picks, knockoutPicks, thirdPoolOverrides = {}) => {
+  const bracket = buildKnockoutRounds(models, picks, knockoutPicks, thirdPoolOverrides);
   const rows = Object.entries(bracket.rounds).map(([roundKey, matches]) => {
     const points = matches.reduce((total, match) => {
       const winner = match.teams.find((team) => team?.code === knockoutPicks[match.id]);
@@ -222,8 +226,8 @@ const getKnockoutScoreDetails = (models, picks, knockoutPicks) => {
   };
 };
 
-const scorePicks = (picks, knockoutPicks, models) =>
-  scoreGroupPicks(picks, models) + getKnockoutScoreDetails(models, picks, knockoutPicks).total;
+const scorePicks = (picks, knockoutPicks, thirdPoolOverrides, models) =>
+  scoreGroupPicks(picks, models) + getKnockoutScoreDetails(models, picks, knockoutPicks, thirdPoolOverrides).total;
 
 function ProbabilityBar({ rows, teamByCode }) {
   return (
@@ -425,8 +429,11 @@ function BracketTeamButton({ match, onPick, team, winnerCode }) {
   );
 }
 
-function KnockoutBracket({ knockoutPicks, models, onAuto, onClear, onPick, picks }) {
-  const bracket = useMemo(() => buildKnockoutRounds(models, picks, knockoutPicks), [knockoutPicks, models, picks]);
+function KnockoutBracket({ knockoutPicks, models, onAuto, onClear, onPick, picks, thirdPoolOverrides }) {
+  const bracket = useMemo(
+    () => buildKnockoutRounds(models, picks, knockoutPicks, thirdPoolOverrides),
+    [knockoutPicks, models, picks, thirdPoolOverrides],
+  );
   const qualifiedThirdCodes = new Set(bracket.thirdPool.slice(0, 8).map((team) => team.code));
 
   return (
@@ -503,6 +510,59 @@ function KnockoutBracket({ knockoutPicks, models, onAuto, onClear, onPick, picks
             <small>{qualifiedThirdCodes.has(team.code) ? `in #${index + 1}` : "out"}</small>
           </div>
         ))}
+      </div>
+    </section>
+  );
+}
+
+function ThirdPoolSelector({ models, onOverride, overrides, picks }) {
+  const { qualifiedThirds, thirdPool } = useMemo(() => getQualifiers(models, picks, overrides), [models, overrides, picks]);
+  const qualifiedCodes = new Set(qualifiedThirds.map((team) => team.code));
+
+  return (
+    <section className="third-selector content-band" aria-label="Third-place knockout pool selector">
+      <div className="section-head">
+        <div>
+          <p className="eyebrow">Step 1B</p>
+          <h2>Choose the 8 Third-Place Teams</h2>
+        </div>
+        <span>{qualifiedThirds.length}/8 currently in</span>
+      </div>
+      <div className="third-selector-grid">
+        {thirdPool.map((team, index) => {
+          const override = overrides[team.code] ?? "auto";
+          const isIn = qualifiedCodes.has(team.code);
+
+          return (
+            <article className={isIn ? "third-team-card in" : "third-team-card out"} key={team.code}>
+              <div className="third-team-main">
+                <img alt="" src={team.flag} loading="lazy" />
+                <div>
+                  <span>
+                    #{index + 1} model pool rank · Group {team.groupId}
+                  </span>
+                  <strong>{team.name}</strong>
+                  <small>
+                    {team.tiebreak}% advance rating · adjusted {team.strength}
+                  </small>
+                </div>
+                <b>{isIn ? "IN" : "OUT"}</b>
+              </div>
+              <div className="third-controls">
+                {["auto", "in", "out"].map((mode) => (
+                  <button
+                    className={override === mode ? "active" : ""}
+                    key={mode}
+                    type="button"
+                    onClick={() => onOverride(team.code, mode)}
+                  >
+                    {mode === "auto" ? "Auto" : mode === "in" ? "Force in" : "Force out"}
+                  </button>
+                ))}
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -724,6 +784,7 @@ function App() {
   const [registered, setRegistered] = useState(false);
   const [picks, setPicks] = useState({});
   const [knockoutPicks, setKnockoutPicks] = useState({});
+  const [thirdPoolOverrides, setThirdPoolOverrides] = useState({});
   const [leaderboard, setLeaderboard] = useState([]);
   const model = useMemo(() => getGroupModel(selectedGroup), [selectedGroup]);
   const allModels = useMemo(() => groups.map((group) => getGroupModel(group.id)), []);
@@ -746,20 +807,23 @@ function App() {
       }).length,
     [allModels, picks],
   );
-  const score = useMemo(() => scorePicks(picks, knockoutPicks, allModels), [allModels, knockoutPicks, picks]);
+  const score = useMemo(
+    () => scorePicks(picks, knockoutPicks, thirdPoolOverrides, allModels),
+    [allModels, knockoutPicks, picks, thirdPoolOverrides],
+  );
   const knockoutScore = useMemo(
-    () => getKnockoutScoreDetails(allModels, picks, knockoutPicks),
-    [allModels, knockoutPicks, picks],
+    () => getKnockoutScoreDetails(allModels, picks, knockoutPicks, thirdPoolOverrides),
+    [allModels, knockoutPicks, picks, thirdPoolOverrides],
   );
   const highlights = useMemo(
-    () => getBracketHighlights(allModels, picks, knockoutPicks),
-    [allModels, knockoutPicks, picks],
+    () => getBracketHighlights(allModels, picks, knockoutPicks, thirdPoolOverrides),
+    [allModels, knockoutPicks, picks, thirdPoolOverrides],
   );
   const shareLink = useMemo(() => {
-    const payload = { knockoutPicks, playerName, picks };
+    const payload = { knockoutPicks, playerName, picks, thirdPoolOverrides };
     const base = typeof window === "undefined" ? "https://wcprobability.com" : window.location.origin;
     return `${base}/?bracket=${encodeBracket(payload)}`;
-  }, [knockoutPicks, picks, playerName]);
+  }, [knockoutPicks, picks, playerName, thirdPoolOverrides]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -769,6 +833,7 @@ function App() {
       if (decoded?.picks) {
         setPicks(decoded.picks);
         setKnockoutPicks(decoded.knockoutPicks ?? {});
+        setThirdPoolOverrides(decoded.thirdPoolOverrides ?? {});
         setPlayerName(decoded.playerName ? `${decoded.playerName}'s bracket` : "");
       }
     }
@@ -777,6 +842,7 @@ function App() {
     if (!shared && saved.picks) {
       setPicks(saved.picks);
       setKnockoutPicks(saved.knockoutPicks ?? {});
+      setThirdPoolOverrides(saved.thirdPoolOverrides ?? {});
       setPlayerName(saved.playerName ?? "");
       setRegistered(Boolean(saved.registered));
     }
@@ -792,9 +858,10 @@ function App() {
         picks,
         playerName,
         registered,
+        thirdPoolOverrides,
       }),
     );
-  }, [knockoutPicks, leaderboard, picks, playerName, registered]);
+  }, [knockoutPicks, leaderboard, picks, playerName, registered, thirdPoolOverrides]);
 
   const handlePick = (groupId, slot, code) => {
     setPicks((current) => {
@@ -809,16 +876,19 @@ function App() {
       };
     });
     setKnockoutPicks({});
+    setThirdPoolOverrides({});
   };
 
   const handleAutoFill = () => {
     setPicks(Object.fromEntries(allModels.map((groupModel) => [groupModel.id, getModelPick(groupModel)])));
     setKnockoutPicks({});
+    setThirdPoolOverrides({});
   };
 
   const handleClear = () => {
     setPicks({});
     setKnockoutPicks({});
+    setThirdPoolOverrides({});
     setRegistered(false);
   };
 
@@ -839,7 +909,20 @@ function App() {
   };
 
   const handleAutoKnockout = () => {
-    setKnockoutPicks(getModelKnockoutPicks(allModels, picks));
+    setKnockoutPicks(getModelKnockoutPicks(allModels, picks, thirdPoolOverrides));
+  };
+
+  const handleThirdPoolOverride = (code, mode) => {
+    setThirdPoolOverrides((current) => {
+      const next = { ...current };
+      if (mode === "auto") {
+        delete next[code];
+      } else {
+        next[code] = mode;
+      }
+      return next;
+    });
+    setKnockoutPicks({});
   };
 
   const handleRegister = () => {
@@ -944,6 +1027,13 @@ function App() {
         </div>
       </section>
 
+      <ThirdPoolSelector
+        models={allModels}
+        onOverride={handleThirdPoolOverride}
+        overrides={thirdPoolOverrides}
+        picks={picks}
+      />
+
       <section className="content-band">
         <div className="section-head">
           <div>
@@ -959,6 +1049,7 @@ function App() {
           onClear={handleClearKnockout}
           onPick={handleKnockoutPick}
           picks={picks}
+          thirdPoolOverrides={thirdPoolOverrides}
         />
       </section>
 
