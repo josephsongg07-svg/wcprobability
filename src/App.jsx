@@ -68,8 +68,9 @@ function TeamRow({ groupId, odds, onPick, pick, team }) {
 
   return (
     <article className={pickedSlot ? "team-row picked" : "team-row"}>
-      <div className="team-mark" style={{ background: team.color }}>
-        {team.code}
+      <div className="team-mark" style={{ borderColor: team.color }}>
+        <img alt={`${team.name} flag`} src={team.flag} loading="lazy" />
+        <span>{team.code}</span>
       </div>
       <div className="team-main">
         <div className="team-name-line">

@@ -17,6 +17,7 @@ npm run dev
 - Advance, first-place, and third-place lane estimates
 - Schedule-adjusted team ratings that account for confederation strength, regional ranking noise, and host boost
 - Frontend bracket creator with username registration, local leaderboard, progress scoring, and share links
+- Country flag images on every team card
 - Korea matchup risk card
 - Public-data prototype assumptions
 - Static data first, API later
