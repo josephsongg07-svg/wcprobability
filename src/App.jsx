@@ -2,9 +2,12 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   BarChart3,
+  CheckCircle2,
   CircleDollarSign,
   Info,
+  RotateCcw,
   ShieldAlert,
+  Sparkles,
   Trophy,
 } from "lucide-react";
 import { getGroupModel, groups, koreaSignals, marketNotes } from "./data.js";
@@ -31,6 +34,24 @@ const decodeBracket = (value) => {
     return null;
   }
 };
+
+const getModelPick = (model) => {
+  const byFirst = [...model.teams].sort((a, b) => model.odds[b.code].first - model.odds[a.code].first);
+  const second = byFirst
+    .slice(1)
+    .sort((a, b) => model.odds[b.code].advance - model.odds[a.code].advance)[0];
+  const third = byFirst
+    .filter((team) => team.code !== byFirst[0]?.code && team.code !== second?.code)
+    .sort((a, b) => model.odds[b.code].third - model.odds[a.code].third)[0];
+
+  return {
+    first: byFirst[0]?.code,
+    second: second?.code,
+    third: third?.code,
+  };
+};
+
+const getTeamByCode = (model, code) => model.teams.find((team) => team.code === code);
 
 function ProbabilityBar({ rows, teamByCode }) {
   return (
@@ -122,6 +143,94 @@ function TeamRow({ groupId, odds, onPick, pick, team }) {
         </div>
       </div>
     </article>
+  );
+}
+
+function PickChip({ code, label, model, slot }) {
+  const team = getTeamByCode(model, code);
+
+  return (
+    <div className={team ? "pick-chip filled" : "pick-chip"}>
+      <span>{label}</span>
+      {team ? (
+        <>
+          <img alt="" src={team.flag} loading="lazy" />
+          <b>{team.code}</b>
+        </>
+      ) : (
+        <b>Pick</b>
+      )}
+      <small>{slot}</small>
+    </div>
+  );
+}
+
+function GroupPickCard({ model, onPick, onSelect, pick }) {
+  const complete = Boolean(pick?.first && pick?.second);
+
+  return (
+    <article className={complete ? "all-group-card complete" : "all-group-card"}>
+      <button className="group-card-head" type="button" onClick={onSelect}>
+        <span>Group {model.id}</span>
+        <strong>{model.title}</strong>
+        {complete ? <CheckCircle2 size={18} /> : <Activity size={18} />}
+      </button>
+      <div className="quick-picks">
+        {model.teams.map((team) => (
+          <div className="quick-team" key={team.code}>
+            <button className="quick-team-name" type="button" onClick={onSelect}>
+              <img alt="" src={team.flag} loading="lazy" />
+              <span>{team.code}</span>
+            </button>
+            <div className="quick-buttons" aria-label={`${team.name} pick buttons`}>
+              {["first", "second", "third"].map((slot) => (
+                <button
+                  className={pick?.[slot] === team.code ? "active" : ""}
+                  key={slot}
+                  type="button"
+                  onClick={() => onPick(model.id, slot, team.code)}
+                >
+                  {slot === "first" ? "1" : slot === "second" ? "2" : "3"}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="card-picks">
+        <PickChip code={pick?.first} label="1st" model={model} slot={`${pick?.first ? model.odds[pick.first].first : 0}%`} />
+        <PickChip code={pick?.second} label="2nd" model={model} slot={`${pick?.second ? model.odds[pick.second].advance : 0}%`} />
+        <PickChip code={pick?.third} label="3rd" model={model} slot={`${pick?.third ? model.odds[pick.third].third : 0}%`} />
+      </div>
+    </article>
+  );
+}
+
+function LiveBracket({ models, picks, score }) {
+  return (
+    <aside className="live-bracket" aria-label="Live bracket preview">
+      <div className="live-bracket-head">
+        <div>
+          <p className="eyebrow">Live bracket</p>
+          <h2>Changes as you pick</h2>
+        </div>
+        <strong>{score} pts</strong>
+      </div>
+      <div className="bracket-lanes">
+        {models.map((model) => {
+          const pick = picks[model.id] ?? {};
+
+          return (
+            <div className="bracket-lane" key={model.id}>
+              <span>Group {model.id}</span>
+              <PickChip code={pick.first} label="1" model={model} slot="winner" />
+              <PickChip code={pick.second} label="2" model={model} slot="auto" />
+              <PickChip code={pick.third} label="3" model={model} slot="wildcard" />
+            </div>
+          );
+        })}
+      </div>
+    </aside>
   );
 }
 
@@ -327,6 +436,15 @@ function App() {
     });
   };
 
+  const handleAutoFill = () => {
+    setPicks(Object.fromEntries(allModels.map((groupModel) => [groupModel.id, getModelPick(groupModel)])));
+  };
+
+  const handleClear = () => {
+    setPicks({});
+    setRegistered(false);
+  };
+
   const handleRegister = () => {
     const cleanName = playerName.trim() || "anonymous";
     const entry = {
@@ -374,11 +492,21 @@ function App() {
         <div className="hero-grid">
           <div className="hero-copy">
             <p className="eyebrow">2026 adjusted group-stage probability board</p>
-            <h1>Create a bracket priced like a market.</h1>
+            <h1>Build the whole bracket from one screen.</h1>
             <p className="lede">
-              Pick every group from the opening stage, register a username, track an estimated score,
-              and send your bracket to friends.
+              Pick every group at once, watch the live bracket change, register a username,
+              and send the result to friends.
             </p>
+            <div className="hero-actions">
+              <button type="button" onClick={handleAutoFill}>
+                <Sparkles size={18} />
+                Model autofill
+              </button>
+              <button type="button" onClick={handleClear}>
+                <RotateCcw size={18} />
+                Clear picks
+              </button>
+            </div>
             <div className="hero-metrics">
               <div>
                 <span>Your progress</span>
@@ -395,28 +523,7 @@ function App() {
             </div>
           </div>
 
-          <div className="bracket-panel" aria-label={`Group ${model.id} bracket preview`}>
-            <div className="bracket-title">
-              <div>
-                <p>{model.title}</p>
-                <h2>Group {model.id} Probability Board</h2>
-              </div>
-              <Activity size={22} />
-            </div>
-            <p className="group-note">{model.note}</p>
-            <div className="team-list">
-              {model.teams.map((team) => (
-                <TeamRow
-                  groupId={model.id}
-                  odds={model.odds[team.code]}
-                  onPick={handlePick}
-                  pick={picks[model.id]}
-                  team={team}
-                  key={team.code}
-                />
-              ))}
-            </div>
-          </div>
+          <LiveBracket models={allModels} picks={picks} score={score} />
         </div>
       </section>
 
@@ -434,13 +541,34 @@ function App() {
         />
       </section>
 
+      <section className="group-builder content-band">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">All groups at once</p>
+            <h2>Fast Bracket Builder</h2>
+          </div>
+          <span>Tap 1 / 2 / 3 for every group</span>
+        </div>
+        <div className="all-groups-grid">
+          {allModels.map((groupModel) => (
+            <GroupPickCard
+              key={groupModel.id}
+              model={groupModel}
+              onPick={handlePick}
+              onSelect={() => setSelectedGroup(groupModel.id)}
+              pick={picks[groupModel.id]}
+            />
+          ))}
+        </div>
+      </section>
+
       <section className="group-control content-band">
         <div className="section-head">
           <div>
-            <p className="eyebrow">All groups</p>
-            <h2>Jump Between Groups A-L</h2>
+            <p className="eyebrow">Deep dive</p>
+            <h2>Group {model.id} Probability Board</h2>
           </div>
-          <span>Schedule-adjusted v0.3</span>
+          <span>{model.title}</span>
         </div>
         <div className="group-tabs" aria-label="Select group">
           {allModels.map((groupModel) => (
@@ -452,6 +580,28 @@ function App() {
               onClick={() => setSelectedGroup(groupModel.id)}
             />
           ))}
+        </div>
+        <div className="bracket-panel detail-panel" aria-label={`Group ${model.id} bracket preview`}>
+          <div className="bracket-title">
+            <div>
+              <p>{model.title}</p>
+              <h2>Group {model.id} Team Cards</h2>
+            </div>
+            <Activity size={22} />
+          </div>
+          <p className="group-note">{model.note}</p>
+          <div className="team-list">
+            {model.teams.map((team) => (
+              <TeamRow
+                groupId={model.id}
+                odds={model.odds[team.code]}
+                onPick={handlePick}
+                pick={picks[model.id]}
+                team={team}
+                key={team.code}
+              />
+            ))}
+          </div>
         </div>
       </section>
 
