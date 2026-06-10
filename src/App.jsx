@@ -14,6 +14,13 @@ import { getGroupModel, groups, koreaSignals, marketNotes } from "./data.js";
 
 const storageKey = "wcprobability-bracket-v1";
 const bracketSlots = ["first", "second", "third", "fourth"];
+const roundLabels = {
+  round32: "R32",
+  round16: "R16",
+  quarterfinals: "QF",
+  semifinals: "SF",
+  final: "Final",
+};
 
 const scorePicks = (picks, models) =>
   models.reduce((total, model) => {
@@ -57,6 +64,88 @@ const getModelPick = (model) => {
 };
 
 const getTeamByCode = (model, code) => model.teams.find((team) => team.code === code);
+
+const getGlobalTeam = (models, code) => models.flatMap((model) => model.teams).find((team) => team.code === code);
+
+const makeBracketTeam = (models, model, code, source) => {
+  const team = getTeamByCode(model, code);
+  if (!team) return null;
+
+  return {
+    ...team,
+    groupId: model.id,
+    source,
+    strength: model.odds[code]?.rating ?? team.adjustedSeed ?? 0,
+    tiebreak: model.odds[code]?.advance ?? 0,
+    model,
+    globalTeam: getGlobalTeam(models, code) ?? team,
+  };
+};
+
+const getQualifiers = (models, picks) => {
+  const automatic = [];
+  const thirdPool = [];
+
+  models.forEach((model) => {
+    const pick = picks[model.id] ?? {};
+    const first = makeBracketTeam(models, model, pick.first, `Group ${model.id} winner`);
+    const second = makeBracketTeam(models, model, pick.second, `Group ${model.id} runner-up`);
+    const third = makeBracketTeam(models, model, pick.third, `Group ${model.id} 3rd-place pool`);
+
+    if (first) automatic.push(first);
+    if (second) automatic.push(second);
+    if (third) thirdPool.push(third);
+  });
+
+  const sortedThirds = [...thirdPool].sort((a, b) => b.tiebreak - a.tiebreak || b.strength - a.strength);
+  return {
+    automatic,
+    qualifiedThirds: sortedThirds.slice(0, 8),
+    thirdPool: sortedThirds,
+  };
+};
+
+const seedQualifiers = (qualifiers) =>
+  [...qualifiers]
+    .sort((a, b) => b.strength - a.strength || b.tiebreak - a.tiebreak)
+    .map((team, index) => ({ ...team, bracketSeed: index + 1 }));
+
+const makeMatches = (roundKey, entrants) => {
+  const matches = [];
+  for (let index = 0; index < entrants.length / 2; index += 1) {
+    matches.push({
+      id: `${roundKey}-${index}`,
+      roundKey,
+      teams: [entrants[index] ?? null, entrants[entrants.length - 1 - index] ?? null],
+    });
+  }
+  return matches;
+};
+
+const pickWinners = (matches, knockoutPicks) =>
+  matches.map((match) => {
+    const selected = knockoutPicks[match.id];
+    return match.teams.find((team) => team?.code === selected) ?? null;
+  });
+
+const buildKnockoutRounds = (models, picks, knockoutPicks) => {
+  const { automatic, qualifiedThirds, thirdPool } = getQualifiers(models, picks);
+  const seeded = seedQualifiers([...automatic, ...qualifiedThirds]);
+  const padded = [...seeded, ...Array.from({ length: Math.max(0, 32 - seeded.length) }, () => null)];
+  const round32 = makeMatches("round32", padded);
+  const round16 = makeMatches("round16", pickWinners(round32, knockoutPicks));
+  const quarterfinals = makeMatches("quarterfinals", pickWinners(round16, knockoutPicks));
+  const semifinals = makeMatches("semifinals", pickWinners(quarterfinals, knockoutPicks));
+  const final = makeMatches("final", pickWinners(semifinals, knockoutPicks));
+  const champion = pickWinners(final, knockoutPicks)[0];
+
+  return {
+    champion,
+    qualifiedCount: seeded.filter(Boolean).length,
+    rounds: { round32, round16, quarterfinals, semifinals, final },
+    thirdPool,
+  };
+};
 
 function ProbabilityBar({ rows, teamByCode }) {
   return (
@@ -231,6 +320,113 @@ function LiveBracket({ models, picks, score }) {
   );
 }
 
+function BracketTeamButton({ match, onPick, team, winnerCode }) {
+  if (!team) {
+    return (
+      <button className="bracket-team empty" type="button" disabled>
+        <span>TBD</span>
+        <small>{match.roundKey === "round32" ? "make group picks" : "pick prior winner"}</small>
+      </button>
+    );
+  }
+
+  return (
+    <button
+      className={winnerCode === team.code ? "bracket-team active" : "bracket-team"}
+      type="button"
+      onClick={() => onPick(match.id, team.code)}
+    >
+      <span>
+        <img alt="" src={team.flag} loading="lazy" />
+        <b>{team.code}</b>
+      </span>
+      <small>
+        #{team.bracketSeed ?? "-"} · {team.source}
+      </small>
+    </button>
+  );
+}
+
+function KnockoutBracket({ knockoutPicks, models, onClear, onPick, picks }) {
+  const bracket = useMemo(() => buildKnockoutRounds(models, picks, knockoutPicks), [knockoutPicks, models, picks]);
+  const qualifiedThirdCodes = new Set(bracket.thirdPool.slice(0, 8).map((team) => team.code));
+
+  return (
+    <section className="knockout-board" aria-label="Interactive knockout bracket">
+      <div className="knockout-head">
+        <div>
+          <p className="eyebrow">Interactive bracket</p>
+          <h2>Click winners through the knockout rounds</h2>
+        </div>
+        <div className="knockout-actions">
+          <div>
+            <span>Qualified</span>
+            <strong>{bracket.qualifiedCount}/32</strong>
+          </div>
+          <button type="button" onClick={onClear}>
+            Clear knockout
+          </button>
+        </div>
+      </div>
+
+      <div className="knockout-scroll">
+        <div className="knockout-rounds">
+          {Object.entries(bracket.rounds).map(([roundKey, matches]) => (
+            <div className="knockout-round" key={roundKey}>
+              <h3>{roundLabels[roundKey]}</h3>
+              <div className="knockout-matches">
+                {matches.map((match, index) => (
+                  <article className="knockout-match" key={match.id}>
+                    <span className="match-label">
+                      {roundLabels[roundKey]} {index + 1}
+                    </span>
+                    {match.teams.map((team, teamIndex) => (
+                      <BracketTeamButton
+                        key={`${match.id}-${team?.code ?? teamIndex}`}
+                        match={match}
+                        onPick={onPick}
+                        team={team}
+                        winnerCode={knockoutPicks[match.id]}
+                      />
+                    ))}
+                  </article>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div className="champion-card">
+            <p className="eyebrow">Champion</p>
+            {bracket.champion ? (
+              <>
+                <img alt="" src={bracket.champion.flag} loading="lazy" />
+                <strong>{bracket.champion.name}</strong>
+                <span>{bracket.champion.source}</span>
+              </>
+            ) : (
+              <>
+                <Trophy size={34} />
+                <strong>TBD</strong>
+                <span>Pick the final winner</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div className="third-pool-strip" aria-label="Third-place pool">
+        <span>3rd-place pool</span>
+        {bracket.thirdPool.map((team, index) => (
+          <div className={qualifiedThirdCodes.has(team.code) ? "pool-team in" : "pool-team out"} key={team.code}>
+            <img alt="" src={team.flag} loading="lazy" />
+            <b>{team.code}</b>
+            <small>{qualifiedThirdCodes.has(team.code) ? `in #${index + 1}` : "out"}</small>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function FixtureCard({ fixture, teamByCode }) {
   return (
     <article className="fixture-card">
@@ -358,6 +554,7 @@ function App() {
   const [playerName, setPlayerName] = useState("");
   const [registered, setRegistered] = useState(false);
   const [picks, setPicks] = useState({});
+  const [knockoutPicks, setKnockoutPicks] = useState({});
   const [leaderboard, setLeaderboard] = useState([]);
   const model = useMemo(() => getGroupModel(selectedGroup), [selectedGroup]);
   const allModels = useMemo(() => groups.map((group) => getGroupModel(group.id)), []);
@@ -382,10 +579,10 @@ function App() {
   );
   const score = useMemo(() => scorePicks(picks, allModels), [allModels, picks]);
   const shareLink = useMemo(() => {
-    const payload = { playerName, picks };
+    const payload = { knockoutPicks, playerName, picks };
     const base = typeof window === "undefined" ? "https://wcprobability.com" : window.location.origin;
     return `${base}/?bracket=${encodeBracket(payload)}`;
-  }, [picks, playerName]);
+  }, [knockoutPicks, picks, playerName]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -394,6 +591,7 @@ function App() {
       const decoded = decodeBracket(shared);
       if (decoded?.picks) {
         setPicks(decoded.picks);
+        setKnockoutPicks(decoded.knockoutPicks ?? {});
         setPlayerName(decoded.playerName ? `${decoded.playerName}'s bracket` : "");
       }
     }
@@ -401,6 +599,7 @@ function App() {
     const saved = JSON.parse(localStorage.getItem(storageKey) ?? "{}");
     if (!shared && saved.picks) {
       setPicks(saved.picks);
+      setKnockoutPicks(saved.knockoutPicks ?? {});
       setPlayerName(saved.playerName ?? "");
       setRegistered(Boolean(saved.registered));
     }
@@ -412,12 +611,13 @@ function App() {
       storageKey,
       JSON.stringify({
         leaderboard,
+        knockoutPicks,
         picks,
         playerName,
         registered,
       }),
     );
-  }, [leaderboard, picks, playerName, registered]);
+  }, [knockoutPicks, leaderboard, picks, playerName, registered]);
 
   const handlePick = (groupId, slot, code) => {
     setPicks((current) => {
@@ -431,15 +631,34 @@ function App() {
         [groupId]: groupPick,
       };
     });
+    setKnockoutPicks({});
   };
 
   const handleAutoFill = () => {
     setPicks(Object.fromEntries(allModels.map((groupModel) => [groupModel.id, getModelPick(groupModel)])));
+    setKnockoutPicks({});
   };
 
   const handleClear = () => {
     setPicks({});
+    setKnockoutPicks({});
     setRegistered(false);
+  };
+
+  const handleKnockoutPick = (matchId, code) => {
+    setKnockoutPicks((current) => {
+      const next = { ...current };
+      if (next[matchId] === code) {
+        delete next[matchId];
+      } else {
+        next[matchId] = code;
+      }
+      return next;
+    });
+  };
+
+  const handleClearKnockout = () => {
+    setKnockoutPicks({});
   };
 
   const handleRegister = () => {
@@ -520,7 +739,13 @@ function App() {
             </div>
           </div>
 
-          <LiveBracket models={allModels} picks={picks} score={score} />
+          <KnockoutBracket
+            knockoutPicks={knockoutPicks}
+            models={allModels}
+            onClear={handleClearKnockout}
+            onPick={handleKnockoutPick}
+            picks={picks}
+          />
         </div>
       </section>
 
@@ -544,7 +769,7 @@ function App() {
             <p className="eyebrow">All groups at once</p>
             <h2>Fast Bracket Builder</h2>
           </div>
-          <span>Tap 1 / 2 / 3 for every group</span>
+          <span>Tap 1 / 2 / 3 / 4 for every group</span>
         </div>
         <div className="all-groups-grid">
           {allModels.map((groupModel) => (
