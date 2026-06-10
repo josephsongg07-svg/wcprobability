@@ -405,7 +405,7 @@ export const koreaSignals = [
 ];
 
 export const marketNotes = [
-  "Top two advance automatically; eight of twelve third-place teams also survive.",
+  "Top two advance automatically; only eight of twelve third-place teams survive through the third-place pool.",
   "Ratings now adjust for confederation difficulty, regional schedule quality, and host boost.",
   "FIFA rank is shown, but the model prices teams from an adjusted strength number.",
   "The next product step is letting users lock picks and price their bracket against the model.",

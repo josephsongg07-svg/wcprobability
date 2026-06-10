@@ -119,7 +119,7 @@ function TeamRow({ groupId, odds, onPick, pick, team }) {
           </div>
           <div className="micro-odds">
             <span>Win group {odds.first}%</span>
-            <span>3rd lane {odds.third}%</span>
+            <span>3rd-place pool {odds.third}%</span>
             {pickedSlot ? <span>Your pick: {pickedSlot}</span> : null}
           </div>
           <div className="pick-buttons">
@@ -221,7 +221,7 @@ function LiveBracket({ models, picks, score }) {
               <span>Group {model.id}</span>
               <PickChip code={pick.first} label="1" model={model} slot="winner" />
               <PickChip code={pick.second} label="2" model={model} slot="auto" />
-              <PickChip code={pick.third} label="3" model={model} slot="wildcard" />
+              <PickChip code={pick.third} label="3" model={model} slot="pool" />
               <PickChip code={pick.fourth} label="4" model={model} slot="out" />
             </div>
           );
