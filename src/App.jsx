@@ -22,7 +22,15 @@ const roundLabels = {
   final: "Final",
 };
 
-const scorePicks = (picks, models) =>
+const roundScoring = {
+  round32: 8,
+  round16: 12,
+  quarterfinals: 18,
+  semifinals: 26,
+  final: 40,
+};
+
+const scoreGroupPicks = (picks, models) =>
   models.reduce((total, model) => {
     const groupPick = picks[model.id] ?? {};
     return (
@@ -186,6 +194,36 @@ const getBracketHighlights = (models, picks, knockoutPicks) => {
     runnerUp,
   };
 };
+
+const getKnockoutScoreDetails = (models, picks, knockoutPicks) => {
+  const bracket = buildKnockoutRounds(models, picks, knockoutPicks);
+  const rows = Object.entries(bracket.rounds).map(([roundKey, matches]) => {
+    const points = matches.reduce((total, match) => {
+      const winner = match.teams.find((team) => team?.code === knockoutPicks[match.id]);
+      if (!winner) return total;
+      const opponent = match.teams.find((team) => team && team.code !== winner.code);
+      const upsetBonus = opponent && winner.strength < opponent.strength ? Math.round((opponent.strength - winner.strength) * 0.6) : 0;
+      return total + roundScoring[roundKey] + upsetBonus;
+    }, 0);
+
+    return {
+      label: roundLabels[roundKey],
+      matches: matches.length,
+      picked: matches.filter((match) => knockoutPicks[match.id]).length,
+      points,
+      roundKey,
+      weight: roundScoring[roundKey],
+    };
+  });
+
+  return {
+    rows,
+    total: rows.reduce((sum, row) => sum + row.points, 0),
+  };
+};
+
+const scorePicks = (picks, knockoutPicks, models) =>
+  scoreGroupPicks(picks, models) + getKnockoutScoreDetails(models, picks, knockoutPicks).total;
 
 function ProbabilityBar({ rows, teamByCode }) {
   return (
@@ -518,6 +556,46 @@ function PredictionSnapshot({ completedGroups, highlights, score }) {
   );
 }
 
+function ScoringPanel({ groupScore, knockoutScore, totalScore }) {
+  return (
+    <section className="scoring-panel content-band" aria-label="Scoring and model statistics">
+      <div className="section-head">
+        <div>
+          <p className="eyebrow">Scoring statistics</p>
+          <h2>How knockout picks turn into points</h2>
+        </div>
+        <span>Total model score {totalScore}</span>
+      </div>
+      <div className="scoring-grid">
+        <article className="scoring-card primary">
+          <span>Group-stage score</span>
+          <strong>{groupScore}</strong>
+          <p>1st uses win-group probability, 2nd uses advance probability, and 3rd uses third-place pool probability.</p>
+        </article>
+        <article className="scoring-card primary">
+          <span>Knockout score</span>
+          <strong>{knockoutScore.total}</strong>
+          <p>Later rounds are worth more. Upsets add a small bonus when a lower adjusted-rating team beats a stronger team.</p>
+        </article>
+        <article className="scoring-card wide">
+          <span>Round weights</span>
+          <div className="round-score-grid">
+            {knockoutScore.rows.map((row) => (
+              <div key={row.roundKey}>
+                <b>{row.label}</b>
+                <strong>+{row.weight}</strong>
+                <small>
+                  {row.picked}/{row.matches} picked · {row.points} pts
+                </small>
+              </div>
+            ))}
+          </div>
+        </article>
+      </div>
+    </section>
+  );
+}
+
 function FixtureCard({ fixture, teamByCode }) {
   return (
     <article className="fixture-card">
@@ -668,7 +746,11 @@ function App() {
       }).length,
     [allModels, picks],
   );
-  const score = useMemo(() => scorePicks(picks, allModels), [allModels, picks]);
+  const score = useMemo(() => scorePicks(picks, knockoutPicks, allModels), [allModels, knockoutPicks, picks]);
+  const knockoutScore = useMemo(
+    () => getKnockoutScoreDetails(allModels, picks, knockoutPicks),
+    [allModels, knockoutPicks, picks],
+  );
   const highlights = useMemo(
     () => getBracketHighlights(allModels, picks, knockoutPicks),
     [allModels, knockoutPicks, picks],
@@ -807,10 +889,9 @@ function App() {
         <div className="hero-grid">
           <div className="hero-copy">
             <p className="eyebrow">2026 adjusted group-stage probability board</p>
-            <h1>Build the whole bracket from one screen.</h1>
+            <h1>Start with the group stage.</h1>
             <p className="lede">
-              Pick every group at once, watch the live bracket change, register a username,
-              and send the result to friends.
+              Rank every group 1st through 4th, let the third-place pool settle, then push those teams into the knockout bracket.
             </p>
             <div className="hero-actions">
               <button type="button" onClick={handleAutoFill}>
@@ -838,38 +919,15 @@ function App() {
             </div>
           </div>
 
-          <KnockoutBracket
-            knockoutPicks={knockoutPicks}
-            models={allModels}
-            onAuto={handleAutoKnockout}
-            onClear={handleClearKnockout}
-            onPick={handleKnockoutPick}
-            picks={picks}
-          />
+          <LiveBracket models={allModels} picks={picks} score={score} />
         </div>
-      </section>
-
-      <PredictionSnapshot completedGroups={completedGroups} highlights={highlights} score={score} />
-
-      <section className="content-band">
-        <CreatorPanel
-          completedGroups={completedGroups}
-          leaderboard={leaderboard}
-          onRegister={handleRegister}
-          onShare={handleShare}
-          playerName={playerName}
-          registered={registered}
-          score={score}
-          setPlayerName={setPlayerName}
-          shareLink={shareLink}
-        />
       </section>
 
       <section className="group-builder content-band">
         <div className="section-head">
           <div>
-            <p className="eyebrow">All groups at once</p>
-            <h2>Fast Bracket Builder</h2>
+            <p className="eyebrow">Step 1</p>
+            <h2>Group Stage Builder</h2>
           </div>
           <span>Tap 1 / 2 / 3 / 4 for every group</span>
         </div>
@@ -884,6 +942,42 @@ function App() {
             />
           ))}
         </div>
+      </section>
+
+      <section className="content-band">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">Step 2</p>
+            <h2>Interactive Knockout Bracket</h2>
+          </div>
+          <span>Top 2 from each group + 8 third-place pool teams</span>
+        </div>
+        <KnockoutBracket
+          knockoutPicks={knockoutPicks}
+          models={allModels}
+          onAuto={handleAutoKnockout}
+          onClear={handleClearKnockout}
+          onPick={handleKnockoutPick}
+          picks={picks}
+        />
+      </section>
+
+      <PredictionSnapshot completedGroups={completedGroups} highlights={highlights} score={score} />
+
+      <ScoringPanel groupScore={scoreGroupPicks(picks, allModels)} knockoutScore={knockoutScore} totalScore={score} />
+
+      <section className="content-band">
+        <CreatorPanel
+          completedGroups={completedGroups}
+          leaderboard={leaderboard}
+          onRegister={handleRegister}
+          onShare={handleShare}
+          playerName={playerName}
+          registered={registered}
+          score={score}
+          setPlayerName={setPlayerName}
+          shareLink={shareLink}
+        />
       </section>
 
       <section className="group-control content-band">
