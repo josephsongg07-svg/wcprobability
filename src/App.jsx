@@ -13,6 +13,7 @@ import {
 import { getGroupModel, groups, koreaSignals, marketNotes } from "./data.js";
 
 const storageKey = "wcprobability-bracket-v1";
+const bracketSlots = ["first", "second", "third", "fourth"];
 
 const scorePicks = (picks, models) =>
   models.reduce((total, model) => {
@@ -43,11 +44,15 @@ const getModelPick = (model) => {
   const third = byFirst
     .filter((team) => team.code !== byFirst[0]?.code && team.code !== second?.code)
     .sort((a, b) => model.odds[b.code].third - model.odds[a.code].third)[0];
+  const fourth = byFirst.find(
+    (team) => team.code !== byFirst[0]?.code && team.code !== second?.code && team.code !== third?.code,
+  );
 
   return {
     first: byFirst[0]?.code,
     second: second?.code,
     third: third?.code,
+    fourth: fourth?.code,
   };
 };
 
@@ -118,27 +123,17 @@ function TeamRow({ groupId, odds, onPick, pick, team }) {
             {pickedSlot ? <span>Your pick: {pickedSlot}</span> : null}
           </div>
           <div className="pick-buttons">
-            <button
-              className={pick?.first === team.code ? "active" : ""}
-              type="button"
-              onClick={() => onPick(groupId, "first", team.code)}
-            >
-              1st
-            </button>
-            <button
-              className={pick?.second === team.code ? "active" : ""}
-              type="button"
-              onClick={() => onPick(groupId, "second", team.code)}
-            >
-              2nd
-            </button>
-            <button
-              className={pick?.third === team.code ? "active" : ""}
-              type="button"
-              onClick={() => onPick(groupId, "third", team.code)}
-            >
-              3rd
-            </button>
+            {bracketSlots.map((slot, index) => (
+              <button
+                className={pick?.[slot] === team.code ? "active" : ""}
+                key={slot}
+                type="button"
+                onClick={() => onPick(groupId, slot, team.code)}
+              >
+                {index + 1}
+                {index === 0 ? "st" : index === 1 ? "nd" : index === 2 ? "rd" : "th"}
+              </button>
+            ))}
           </div>
         </div>
       </div>
@@ -166,7 +161,7 @@ function PickChip({ code, label, model, slot }) {
 }
 
 function GroupPickCard({ model, onPick, onSelect, pick }) {
-  const complete = Boolean(pick?.first && pick?.second);
+  const complete = bracketSlots.every((slot) => pick?.[slot]);
 
   return (
     <article className={complete ? "all-group-card complete" : "all-group-card"}>
@@ -183,14 +178,14 @@ function GroupPickCard({ model, onPick, onSelect, pick }) {
               <span>{team.code}</span>
             </button>
             <div className="quick-buttons" aria-label={`${team.name} pick buttons`}>
-              {["first", "second", "third"].map((slot) => (
+              {bracketSlots.map((slot, index) => (
                 <button
                   className={pick?.[slot] === team.code ? "active" : ""}
                   key={slot}
                   type="button"
                   onClick={() => onPick(model.id, slot, team.code)}
                 >
-                  {slot === "first" ? "1" : slot === "second" ? "2" : "3"}
+                  {index + 1}
                 </button>
               ))}
             </div>
@@ -201,6 +196,7 @@ function GroupPickCard({ model, onPick, onSelect, pick }) {
         <PickChip code={pick?.first} label="1st" model={model} slot={`${pick?.first ? model.odds[pick.first].first : 0}%`} />
         <PickChip code={pick?.second} label="2nd" model={model} slot={`${pick?.second ? model.odds[pick.second].advance : 0}%`} />
         <PickChip code={pick?.third} label="3rd" model={model} slot={`${pick?.third ? model.odds[pick.third].third : 0}%`} />
+        <PickChip code={pick?.fourth} label="4th" model={model} slot="out" />
       </div>
     </article>
   );
@@ -226,6 +222,7 @@ function LiveBracket({ models, picks, score }) {
               <PickChip code={pick.first} label="1" model={model} slot="winner" />
               <PickChip code={pick.second} label="2" model={model} slot="auto" />
               <PickChip code={pick.third} label="3" model={model} slot="wildcard" />
+              <PickChip code={pick.fourth} label="4" model={model} slot="out" />
             </div>
           );
         })}
@@ -379,7 +376,7 @@ function App() {
     () =>
       allModels.filter((groupModel) => {
         const groupPick = picks[groupModel.id];
-        return groupPick?.first && groupPick?.second;
+        return bracketSlots.every((slot) => groupPick?.[slot]);
       }).length,
     [allModels, picks],
   );
@@ -425,7 +422,7 @@ function App() {
   const handlePick = (groupId, slot, code) => {
     setPicks((current) => {
       const groupPick = { ...(current[groupId] ?? {}) };
-      for (const key of ["first", "second", "third"]) {
+      for (const key of bracketSlots) {
         if (groupPick[key] === code) delete groupPick[key];
       }
       groupPick[slot] = code;
