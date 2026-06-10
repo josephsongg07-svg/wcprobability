@@ -166,6 +166,27 @@ const getModelKnockoutPicks = (models, picks) => {
   return knockoutPicks;
 };
 
+const getBracketHighlights = (models, picks, knockoutPicks) => {
+  const bracket = buildKnockoutRounds(models, picks, knockoutPicks);
+  const finalMatch = bracket.rounds.final[0];
+  const champion = bracket.champion;
+  const runnerUp = champion ? finalMatch?.teams.find((team) => team && team.code !== champion.code) : null;
+  const semifinalLosers = bracket.rounds.semifinals
+    .map((match) => {
+      const winnerCode = knockoutPicks[match.id];
+      return winnerCode ? match.teams.find((team) => team && team.code !== winnerCode) : null;
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.strength - a.strength);
+
+  return {
+    champion,
+    projectedThird: semifinalLosers[0] ?? null,
+    qualifiedCount: bracket.qualifiedCount,
+    runnerUp,
+  };
+};
+
 function ProbabilityBar({ rows, teamByCode }) {
   return (
     <div className="prob-stack" aria-label="match probabilities">
@@ -449,6 +470,54 @@ function KnockoutBracket({ knockoutPicks, models, onAuto, onClear, onPick, picks
   );
 }
 
+function SummaryTeam({ label, team }) {
+  return (
+    <div className="summary-stat-card">
+      <span>{label}</span>
+      {team ? (
+        <>
+          <img alt="" src={team.flag} loading="lazy" />
+          <strong>{team.name}</strong>
+          <small>{team.source}</small>
+        </>
+      ) : (
+        <>
+          <Trophy size={27} />
+          <strong>TBD</strong>
+          <small>run or click bracket</small>
+        </>
+      )}
+    </div>
+  );
+}
+
+function PredictionSnapshot({ completedGroups, highlights, score }) {
+  return (
+    <section className="prediction-snapshot content-band" aria-label="Prediction summary">
+      <div className="snapshot-grid">
+        <SummaryTeam label="Champion" team={highlights.champion} />
+        <SummaryTeam label="Runner up" team={highlights.runnerUp} />
+        <SummaryTeam label="Projected 3rd" team={highlights.projectedThird} />
+        <div className="summary-stat-card numeric">
+          <span>Groups done</span>
+          <strong>{completedGroups}/12</strong>
+          <small>{highlights.qualifiedCount}/32 knockout qualifiers</small>
+        </div>
+      </div>
+      <div className="model-explainer">
+        <div>
+          <span>Model score</span>
+          <strong>{score}</strong>
+        </div>
+        <p>
+          Group picks use win-group, advance, and third-place pool probabilities. Knockout paths are driven by
+          adjusted ratings that include confederation strength, regional schedule quality, and host effects.
+        </p>
+      </div>
+    </section>
+  );
+}
+
 function FixtureCard({ fixture, teamByCode }) {
   return (
     <article className="fixture-card">
@@ -600,6 +669,10 @@ function App() {
     [allModels, picks],
   );
   const score = useMemo(() => scorePicks(picks, allModels), [allModels, picks]);
+  const highlights = useMemo(
+    () => getBracketHighlights(allModels, picks, knockoutPicks),
+    [allModels, knockoutPicks, picks],
+  );
   const shareLink = useMemo(() => {
     const payload = { knockoutPicks, playerName, picks };
     const base = typeof window === "undefined" ? "https://wcprobability.com" : window.location.origin;
@@ -775,6 +848,8 @@ function App() {
           />
         </div>
       </section>
+
+      <PredictionSnapshot completedGroups={completedGroups} highlights={highlights} score={score} />
 
       <section className="content-band">
         <CreatorPanel
