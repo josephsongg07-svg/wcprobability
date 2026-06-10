@@ -11,7 +11,10 @@ npm run dev
 
 ## Current scope
 
-- Group A probability board
-- Korea matchup cards
+- Groups A-L probability boards
+- Six fixture cards per group
+- Group favorite overview
+- Advance, first-place, and third-place lane estimates
+- Korea matchup risk card
 - Public-data prototype assumptions
 - Static data first, API later

@@ -249,12 +249,24 @@ h1 {
   font-weight: 800;
 }
 
+.group-note {
+  margin: -4px 0 14px;
+  color: #596579;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
 .team-main p {
   min-height: 38px;
   margin: 6px 0 10px;
   color: #596579;
   font-size: 13px;
   line-height: 1.45;
+}
+
+.team-odds {
+  display: grid;
+  gap: 7px;
 }
 
 .market-bars label {
@@ -264,6 +276,22 @@ h1 {
   color: #374151;
   font-size: 12px;
   font-weight: 900;
+}
+
+.micro-odds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.micro-odds span {
+  padding: 4px 7px;
+  border: 1px solid #dce3ec;
+  border-radius: 999px;
+  background: #fff;
+  color: #526073;
+  font-size: 11px;
+  font-weight: 850;
 }
 
 meter {
@@ -310,6 +338,49 @@ meter::-webkit-meter-optimum-value {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
+}
+
+.group-control {
+  padding-top: 36px;
+}
+
+.group-tabs {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.group-tab {
+  display: grid;
+  min-height: 64px;
+  padding: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+
+.group-tab span {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.group-tab b {
+  align-self: end;
+  font-size: 18px;
+}
+
+.group-tab.active {
+  border-color: #16d9a4;
+  background: #ffffff;
+  color: #111827;
+}
+
+.group-tab.active span {
+  color: #0f8a5f;
 }
 
 .fixture-card {
@@ -368,6 +439,45 @@ meter::-webkit-meter-optimum-value {
 
 .prob-labels b {
   color: #111827;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.group-summary {
+  display: grid;
+  gap: 6px;
+  min-height: 116px;
+  padding: 14px;
+  border: 1px solid #d5dbe3;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  text-align: left;
+}
+
+.group-summary span {
+  color: #0f8a5f;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.group-summary strong {
+  color: #111827;
+  font-size: 20px;
+  line-height: 1.1;
+}
+
+.group-summary small {
+  color: #5d6878;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .analysis-grid {
@@ -465,6 +575,14 @@ meter::-webkit-meter-optimum-value {
   .fixture-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .group-tabs {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -484,8 +602,13 @@ meter::-webkit-meter-optimum-value {
 
   .hero-metrics,
   .fixture-grid,
-  .signal-grid {
+  .signal-grid,
+  .summary-grid {
     grid-template-columns: 1fr;
+  }
+
+  .group-tabs {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   h1 {

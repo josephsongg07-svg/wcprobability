@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
 import {
   Activity,
   BarChart3,
@@ -7,11 +7,9 @@ import {
   ShieldAlert,
   Trophy,
 } from "lucide-react";
-import { fixtures, koreaSignals, marketNotes, teams } from "./data.js";
+import { getGroupModel, groups, koreaSignals, marketNotes } from "./data.js";
 
-const teamByCode = Object.fromEntries(teams.map((team) => [team.code, team]));
-
-function ProbabilityBar({ rows }) {
+function ProbabilityBar({ rows, teamByCode }) {
   return (
     <div className="prob-stack" aria-label="match probabilities">
       <div className="prob-track">
@@ -41,7 +39,7 @@ function ProbabilityBar({ rows }) {
   );
 }
 
-function TeamRow({ team }) {
+function TeamRow({ odds, team }) {
   return (
     <article className="team-row">
       <div className="team-mark" style={{ background: team.color }}>
@@ -53,29 +51,37 @@ function TeamRow({ team }) {
           <span>FIFA #{team.rank}</span>
         </div>
         <p>{team.profile}</p>
-        <div className="market-bars">
-          <label>
-            Advance
-            <span>{team.odds.advance}%</span>
-          </label>
-          <meter min="0" max="100" value={team.odds.advance} />
+        <div className="team-odds">
+          <div className="market-bars">
+            <label>
+              Advance
+              <span>{odds.advance}%</span>
+            </label>
+            <meter min="0" max="100" value={odds.advance} />
+          </div>
+          <div className="micro-odds">
+            <span>Win group {odds.first}%</span>
+            <span>3rd lane {odds.third}%</span>
+          </div>
         </div>
       </div>
     </article>
   );
 }
 
-function FixtureCard({ fixture }) {
+function FixtureCard({ fixture, teamByCode }) {
   return (
     <article className="fixture-card">
       <div className="fixture-head">
         <div>
-          <p>{fixture.date} · {fixture.venue}</p>
+          <p>
+            {fixture.date} · {fixture.venue}
+          </p>
           <h3>{fixture.match}</h3>
         </div>
         <span>{fixture.note}</span>
       </div>
-      <ProbabilityBar rows={fixture.probs} />
+      <ProbabilityBar rows={fixture.probs} teamByCode={teamByCode} />
     </article>
   );
 }
@@ -92,7 +98,48 @@ function Signal({ signal }) {
   );
 }
 
+function GroupButton({ active, group, model, onClick }) {
+  const favorite = [...model.teams].sort((a, b) => model.odds[b.code].first - model.odds[a.code].first)[0];
+
+  return (
+    <button className={active ? "group-tab active" : "group-tab"} type="button" onClick={onClick}>
+      <span>Group {group.id}</span>
+      <b>{favorite.code}</b>
+    </button>
+  );
+}
+
+function GroupSummary({ model, onSelect }) {
+  const favorite = [...model.teams].sort((a, b) => model.odds[b.code].first - model.odds[a.code].first)[0];
+  const second = [...model.teams].sort((a, b) => model.odds[b.code].advance - model.odds[a.code].advance)[1];
+
+  return (
+    <button className="group-summary" type="button" onClick={onSelect}>
+      <span>Group {model.id}</span>
+      <strong>{favorite.name}</strong>
+      <small>
+        Favorite {model.odds[favorite.code].first}% · next {second.code} {model.odds[second.code].advance}%
+      </small>
+    </button>
+  );
+}
+
 function App() {
+  const [selectedGroup, setSelectedGroup] = useState("A");
+  const model = useMemo(() => getGroupModel(selectedGroup), [selectedGroup]);
+  const allModels = useMemo(() => groups.map((group) => getGroupModel(group.id)), []);
+  const teamByCode = useMemo(
+    () => Object.fromEntries(model.teams.map((team) => [team.code, team])),
+    [model],
+  );
+  const topTeam = [...model.teams].sort((a, b) => model.odds[b.code].first - model.odds[a.code].first)[0];
+  const swingFixture = model.fixtures
+    .map((fixture) => ({
+      ...fixture,
+      spread: Math.abs(fixture.probs[0][1] - fixture.probs[2][1]),
+    }))
+    .sort((a, b) => a.spread - b.spread)[0];
+
   return (
     <main>
       <section className="hero">
@@ -113,42 +160,64 @@ function App() {
 
         <div className="hero-grid">
           <div className="hero-copy">
-            <p className="eyebrow">2026 Group A public-data prototype</p>
-            <h1>Build the bracket like a market.</h1>
+            <p className="eyebrow">2026 full group-stage probability board</p>
+            <h1>Every group, priced like a market.</h1>
             <p className="lede">
-              A World Cup bracket game where every pick carries a probability,
-              an upset price, and a quick reason why.
+              A World Cup bracket game where every pick carries an advance chance,
+              a group-winner price, a third-place lane, and quick match probabilities.
             </p>
             <div className="hero-metrics">
               <div>
-                <span>Korea advance</span>
-                <strong>61%</strong>
+                <span>Selected group</span>
+                <strong>Group {model.id}</strong>
               </div>
               <div>
                 <span>Group favorite</span>
-                <strong>Mexico</strong>
+                <strong>{topTeam.name}</strong>
               </div>
               <div>
                 <span>Swing match</span>
-                <strong>KOR-CZE</strong>
+                <strong>{swingFixture.probs[0][0]}-{swingFixture.probs[2][0]}</strong>
               </div>
             </div>
           </div>
 
-          <div className="bracket-panel" aria-label="Group A bracket preview">
+          <div className="bracket-panel" aria-label={`Group ${model.id} bracket preview`}>
             <div className="bracket-title">
               <div>
-                <p>Group A</p>
-                <h2>Probability Board</h2>
+                <p>{model.title}</p>
+                <h2>Group {model.id} Probability Board</h2>
               </div>
               <Activity size={22} />
             </div>
+            <p className="group-note">{model.note}</p>
             <div className="team-list">
-              {teams.map((team) => (
-                <TeamRow team={team} key={team.code} />
+              {model.teams.map((team) => (
+                <TeamRow odds={model.odds[team.code]} team={team} key={team.code} />
               ))}
             </div>
           </div>
+        </div>
+      </section>
+
+      <section className="group-control content-band">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">All groups</p>
+            <h2>Jump Between Groups A-L</h2>
+          </div>
+          <span>Static public-data v0.2</span>
+        </div>
+        <div className="group-tabs" aria-label="Select group">
+          {allModels.map((groupModel) => (
+            <GroupButton
+              active={groupModel.id === selectedGroup}
+              group={groupModel}
+              key={groupModel.id}
+              model={groupModel}
+              onClick={() => setSelectedGroup(groupModel.id)}
+            />
+          ))}
         </div>
       </section>
 
@@ -156,13 +225,32 @@ function App() {
         <div className="section-head">
           <div>
             <p className="eyebrow">Match cards</p>
-            <h2>Group A Prices</h2>
+            <h2>Group {model.id} Prices</h2>
           </div>
-          <span>Static public-data v0.1</span>
+          <span>{model.fixtures.length} group matches</span>
         </div>
         <div className="fixture-grid">
-          {fixtures.map((fixture) => (
-            <FixtureCard fixture={fixture} key={fixture.match} />
+          {model.fixtures.map((fixture) => (
+            <FixtureCard fixture={fixture} key={fixture.match} teamByCode={teamByCode} />
+          ))}
+        </div>
+      </section>
+
+      <section className="content-band">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">Tournament view</p>
+            <h2>Projected Group Favorites</h2>
+          </div>
+          <span>Tap a group to load its board</span>
+        </div>
+        <div className="summary-grid">
+          {allModels.map((groupModel) => (
+            <GroupSummary
+              key={groupModel.id}
+              model={groupModel}
+              onSelect={() => setSelectedGroup(groupModel.id)}
+            />
           ))}
         </div>
       </section>
@@ -172,7 +260,7 @@ function App() {
           <div className="section-head compact">
             <div>
               <p className="eyebrow">Korea card</p>
-              <h2>Where the model is nervous</h2>
+              <h2>Where Group A is nervous</h2>
             </div>
             <ShieldAlert size={24} />
           </div>
@@ -187,7 +275,7 @@ function App() {
           <div className="section-head compact">
             <div>
               <p className="eyebrow">Model notes</p>
-              <h2>Why this is playable</h2>
+              <h2>What changed</h2>
             </div>
             <Info size={24} />
           </div>
