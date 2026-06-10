@@ -15,6 +15,7 @@ npm run dev
 - Six fixture cards per group
 - Group favorite overview
 - Advance, first-place, and third-place lane estimates
+- Schedule-adjusted team ratings that account for confederation strength, regional ranking noise, and host boost
 - Korea matchup risk card
 - Public-data prototype assumptions
 - Static data first, API later

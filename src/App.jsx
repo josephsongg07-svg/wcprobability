@@ -40,6 +40,8 @@ function ProbabilityBar({ rows, teamByCode }) {
 }
 
 function TeamRow({ odds, team }) {
+  const adjustmentLabel = odds.adjustment > 0 ? `+${odds.adjustment}` : `${odds.adjustment}`;
+
   return (
     <article className="team-row">
       <div className="team-mark" style={{ background: team.color }}>
@@ -49,6 +51,11 @@ function TeamRow({ odds, team }) {
         <div className="team-name-line">
           <h3>{team.name}</h3>
           <span>FIFA #{team.rank}</span>
+        </div>
+        <div className="rating-line">
+          <span>{team.confed}</span>
+          <span>{team.scheduleContext}</span>
+          <span>Adj rating {odds.rating} ({adjustmentLabel})</span>
         </div>
         <p>{team.profile}</p>
         <div className="team-odds">
@@ -118,7 +125,8 @@ function GroupSummary({ model, onSelect }) {
       <span>Group {model.id}</span>
       <strong>{favorite.name}</strong>
       <small>
-        Favorite {model.odds[favorite.code].first}% · next {second.code} {model.odds[second.code].advance}%
+        Favorite {model.odds[favorite.code].first}% · rating {model.odds[favorite.code].rating} · next{" "}
+        {second.code} {model.odds[second.code].advance}%
       </small>
     </button>
   );
@@ -160,11 +168,11 @@ function App() {
 
         <div className="hero-grid">
           <div className="hero-copy">
-            <p className="eyebrow">2026 full group-stage probability board</p>
+            <p className="eyebrow">2026 adjusted group-stage probability board</p>
             <h1>Every group, priced like a market.</h1>
             <p className="lede">
               A World Cup bracket game where every pick carries an advance chance,
-              a group-winner price, a third-place lane, and quick match probabilities.
+              a group-winner price, and an adjusted rating that discounts ranking noise.
             </p>
             <div className="hero-metrics">
               <div>
@@ -206,7 +214,7 @@ function App() {
             <p className="eyebrow">All groups</p>
             <h2>Jump Between Groups A-L</h2>
           </div>
-          <span>Static public-data v0.2</span>
+          <span>Schedule-adjusted v0.3</span>
         </div>
         <div className="group-tabs" aria-label="Select group">
           {allModels.map((groupModel) => (

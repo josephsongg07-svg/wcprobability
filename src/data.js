@@ -53,6 +53,82 @@ const team = (code, name, rank, seed, profile, confed = "") => ({
   profile,
 });
 
+const confedScheduleAdjustment = {
+  CONMEBOL: 4,
+  UEFA: 3,
+  CAF: 0,
+  AFC: -1,
+  CONCACAF: -2,
+  OFC: -5,
+};
+
+const teamScheduleAdjustment = {
+  ARG: 2,
+  BRA: 2,
+  COL: 2,
+  ECU: 2,
+  PAR: 1,
+  URU: 2,
+  AUT: 2,
+  CRO: 2,
+  CZE: 1,
+  ENG: 2,
+  FRA: 2,
+  GER: 2,
+  NED: 2,
+  NOR: 1,
+  POR: 2,
+  SCO: 1,
+  ESP: 2,
+  SUI: 1,
+  SWE: 1,
+  TUR: 1,
+  BEL: 1,
+  MAR: 2,
+  SEN: 1,
+  JPN: 2,
+  IRN: 1,
+  KOR: 1,
+  AUS: 0,
+  MEX: -2,
+  USA: -1,
+  CAN: -1,
+  PAN: -3,
+  QAT: -2,
+  KSA: -2,
+  NZL: -4,
+};
+
+const hostBoost = {
+  CAN: 3,
+  MEX: 4,
+  USA: 3,
+};
+
+const scheduleContext = {
+  CONMEBOL: "CONMEBOL grind",
+  UEFA: "UEFA depth",
+  CAF: "CAF variance",
+  AFC: "AFC mixed sample",
+  CONCACAF: "CONCACAF inflation check",
+  OFC: "OFC sample penalty",
+};
+
+function enrichTeam(teamItem) {
+  const confedAdjustment = confedScheduleAdjustment[teamItem.confed] ?? 0;
+  const scheduleAdjustment = teamScheduleAdjustment[teamItem.code] ?? 0;
+  const homeAdjustment = hostBoost[teamItem.code] ?? 0;
+  const adjustedSeed = clamp(teamItem.seed + confedAdjustment + scheduleAdjustment + homeAdjustment, 45, 96);
+  const totalAdjustment = adjustedSeed - teamItem.seed;
+
+  return {
+    ...teamItem,
+    adjustedSeed,
+    totalAdjustment,
+    scheduleContext: scheduleContext[teamItem.confed] ?? "Neutral sample",
+  };
+}
+
 export const groups = [
   {
     id: "A",
@@ -200,11 +276,11 @@ const pairings = [
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
 function matchProb(a, b) {
-  const diff = a.seed - b.seed;
+  const diff = a.adjustedSeed - b.adjustedSeed;
   const draw = clamp(27 - Math.abs(diff) * 0.12, 19, 29);
-  const homeBoost = ["MEX", "CAN", "USA"].includes(a.code) ? 4 : 0;
-  const awayHostDrag = ["MEX", "CAN", "USA"].includes(b.code) ? -4 : 0;
-  const baseA = clamp(36 + diff * 1.08 + homeBoost + awayHostDrag, 14, 72);
+  const matchHostBoost = ["MEX", "CAN", "USA"].includes(a.code) ? 2 : 0;
+  const awayHostDrag = ["MEX", "CAN", "USA"].includes(b.code) ? -2 : 0;
+  const baseA = clamp(36 + diff * 1.08 + matchHostBoost + awayHostDrag, 14, 72);
   const winA = Math.round(clamp(baseA, 8, 100 - draw - 8));
   const winB = 100 - winA - Math.round(draw);
   return [
@@ -215,12 +291,12 @@ function matchProb(a, b) {
 }
 
 function teamOdds(group) {
-  const sorted = [...group.teams].sort((a, b) => b.seed - a.seed);
+  const sorted = [...group.teams].sort((a, b) => b.adjustedSeed - a.adjustedSeed);
   return Object.fromEntries(
     group.teams.map((teamItem) => {
       const groupRank = sorted.findIndex((candidate) => candidate.code === teamItem.code) + 1;
-      const strengthGap = teamItem.seed - sorted[0].seed;
-      const advance = clamp(Math.round(48 + (teamItem.seed - 68) * 1.9 + (5 - groupRank) * 3), 18, 93);
+      const strengthGap = teamItem.adjustedSeed - sorted[0].adjustedSeed;
+      const advance = clamp(Math.round(48 + (teamItem.adjustedSeed - 68) * 1.9 + (5 - groupRank) * 3), 18, 93);
       const first = clamp(Math.round(25 + strengthGap * 1.7 + (groupRank === 1 ? 12 : 0)), 4, 67);
       const third = clamp(Math.round(46 - first * 0.32 - advance * 0.12), 8, 34);
       return [
@@ -229,7 +305,9 @@ function teamOdds(group) {
           advance,
           first,
           third,
-          rating: teamItem.seed,
+          rating: teamItem.adjustedSeed,
+          baseRating: teamItem.seed,
+          adjustment: teamItem.totalAdjustment,
           groupRank,
         },
       ];
@@ -253,10 +331,15 @@ function fixtureModel(group) {
 
 export function getGroupModel(groupId) {
   const group = groups.find((item) => item.id === groupId) ?? groups[0];
-  return {
+  const modeledGroup = {
     ...group,
-    odds: teamOdds(group),
-    fixtures: fixtureModel(group),
+    teams: group.teams.map(enrichTeam),
+  };
+
+  return {
+    ...modeledGroup,
+    odds: teamOdds(modeledGroup),
+    fixtures: fixtureModel(modeledGroup),
   };
 }
 
@@ -271,7 +354,7 @@ export const koreaSignals = [
 
 export const marketNotes = [
   "Top two advance automatically; eight of twelve third-place teams also survive.",
-  "The board uses static public-data ratings and travel/host heuristics, not live betting odds.",
-  "Each group now has six fixture cards, match prices, advance chances, and first-place lanes.",
+  "Ratings now adjust for confederation difficulty, regional schedule quality, and host boost.",
+  "FIFA rank is shown, but the model prices teams from an adjusted strength number.",
   "The next product step is letting users lock picks and price their bracket against the model.",
 ];

@@ -249,6 +249,24 @@ h1 {
   font-weight: 800;
 }
 
+.rating-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.rating-line span {
+  padding: 3px 6px;
+  border: 1px solid #dce3ec;
+  border-radius: 999px;
+  background: #eef6f3;
+  color: #365244;
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .group-note {
   margin: -4px 0 14px;
   color: #596579;
