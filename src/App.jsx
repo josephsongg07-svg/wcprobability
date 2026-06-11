@@ -10,7 +10,7 @@ import {
   Sparkles,
   Trophy,
 } from "lucide-react";
-import { getGroupModel, groups, koreaSignals, marketNotes } from "./data.js";
+import { getGroupModel, getTeamSignals, groups, marketNotes } from "./data.js";
 
 const storageKey = "wcprobability-bracket-v1";
 const bracketSlots = ["first", "second", "third", "fourth"];
@@ -52,22 +52,22 @@ const decodeBracket = (value) => {
 };
 
 const getModelPick = (model) => {
-  const byFirst = [...model.teams].sort((a, b) => model.odds[b.code].first - model.odds[a.code].first);
-  const second = byFirst
-    .slice(1)
-    .sort((a, b) => model.odds[b.code].advance - model.odds[a.code].advance)[0];
-  const third = byFirst
-    .filter((team) => team.code !== byFirst[0]?.code && team.code !== second?.code)
-    .sort((a, b) => model.odds[b.code].third - model.odds[a.code].third)[0];
-  const fourth = byFirst.find(
-    (team) => team.code !== byFirst[0]?.code && team.code !== second?.code && team.code !== third?.code,
+  const finishScore = (team) => {
+    const odds = model.odds[team.code];
+    return odds.first * 1 + odds.second * 2 + odds.third * 3 + odds.fourth * 4;
+  };
+  const ordered = [...model.teams].sort(
+    (a, b) =>
+      finishScore(a) - finishScore(b) ||
+      model.odds[b.code].expectedPoints - model.odds[a.code].expectedPoints ||
+      model.odds[b.code].rating - model.odds[a.code].rating,
   );
 
   return {
-    first: byFirst[0]?.code,
-    second: second?.code,
-    third: third?.code,
-    fourth: fourth?.code,
+    first: ordered[0]?.code,
+    second: ordered[1]?.code,
+    third: ordered[2]?.code,
+    fourth: ordered[3]?.code,
   };
 };
 
@@ -154,6 +154,7 @@ const buildKnockoutRounds = (models, picks, knockoutPicks, thirdPoolOverrides = 
   return {
     champion,
     qualifiedCount: seeded.filter(Boolean).length,
+    qualifiedThirds,
     rounds: { round32, round16, quarterfinals, semifinals, final },
     thirdPool,
   };
@@ -290,7 +291,10 @@ function TeamRow({ groupId, odds, onPick, pick, team }) {
           </div>
           <div className="micro-odds">
             <span>Win group {odds.first}%</span>
+            <span>2nd {odds.second}%</span>
             <span>3rd-place pool {odds.third}%</span>
+            <span>4th {odds.fourth}%</span>
+            <span>xPts {odds.expectedPoints}</span>
             {pickedSlot ? <span>Your pick: {pickedSlot}</span> : null}
           </div>
           <div className="pick-buttons">
@@ -365,9 +369,9 @@ function GroupPickCard({ model, onPick, onSelect, pick }) {
       </div>
       <div className="card-picks">
         <PickChip code={pick?.first} label="1st" model={model} slot={`${pick?.first ? model.odds[pick.first].first : 0}%`} />
-        <PickChip code={pick?.second} label="2nd" model={model} slot={`${pick?.second ? model.odds[pick.second].advance : 0}%`} />
+        <PickChip code={pick?.second} label="2nd" model={model} slot={`${pick?.second ? model.odds[pick.second].second : 0}%`} />
         <PickChip code={pick?.third} label="3rd" model={model} slot={`${pick?.third ? model.odds[pick.third].third : 0}%`} />
-        <PickChip code={pick?.fourth} label="4th" model={model} slot="out" />
+        <PickChip code={pick?.fourth} label="4th" model={model} slot={`${pick?.fourth ? model.odds[pick.fourth].fourth : 0}%`} />
       </div>
     </article>
   );
@@ -434,7 +438,7 @@ function KnockoutBracket({ knockoutPicks, models, onAuto, onClear, onPick, picks
     () => buildKnockoutRounds(models, picks, knockoutPicks, thirdPoolOverrides),
     [knockoutPicks, models, picks, thirdPoolOverrides],
   );
-  const qualifiedThirdCodes = new Set(bracket.thirdPool.slice(0, 8).map((team) => team.code));
+  const qualifiedThirdCodes = new Set(bracket.qualifiedThirds.map((team) => team.code));
 
   return (
     <section className="knockout-board" aria-label="Interactive knockout bracket">
@@ -685,6 +689,85 @@ function Signal({ signal }) {
   );
 }
 
+function TeamLab({ models, selectedCode, onSelect, onSelectGroup }) {
+  const teams = models.flatMap((model) =>
+    model.teams.map((team) => ({
+      ...team,
+      groupId: model.id,
+      odds: model.odds[team.code],
+    })),
+  );
+  const selected = teams.find((team) => team.code === selectedCode) ?? teams[0];
+  const selectedSignals = getTeamSignals(selected, selected.odds);
+
+  return (
+    <section className="team-lab analysis-grid">
+      <div className="team-lab-panel">
+        <div className="section-head compact">
+          <div>
+            <p className="eyebrow">Team lab</p>
+            <h2>Every Team Has a Probability Card</h2>
+          </div>
+          <ShieldAlert size={24} />
+        </div>
+        <div className="featured-team">
+          <img alt="" src={selected.flag} loading="lazy" />
+          <div>
+            <span>
+              Group {selected.groupId} · FIFA #{selected.rank} · {selected.confed}
+            </span>
+            <strong>{selected.name}</strong>
+            <small>
+              {selected.odds.first}% 1st · {selected.odds.second}% 2nd · {selected.odds.third}% 3rd ·{" "}
+              {selected.odds.fourth}% 4th · {selected.odds.expectedPoints} xPts
+            </small>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              onSelectGroup(selected.groupId);
+              document.querySelector(".group-control")?.scrollIntoView({ behavior: "smooth", block: "start" });
+            }}
+          >
+            Open group
+          </button>
+        </div>
+        <div className="signal-grid">
+          {selectedSignals.map((signal) => (
+            <Signal signal={signal} key={signal.label} />
+          ))}
+        </div>
+      </div>
+
+      <div className="team-picker-panel">
+        <div className="section-head compact">
+          <div>
+            <p className="eyebrow">Toggle cards</p>
+            <h2>48-team selector</h2>
+          </div>
+          <span>{selected.code}</span>
+        </div>
+        <div className="team-card-grid">
+          {teams.map((team) => (
+            <button
+              className={team.code === selected.code ? "team-mini-card active" : "team-mini-card"}
+              key={team.code}
+              type="button"
+              onClick={() => onSelect(team.code)}
+            >
+              <img alt="" src={team.flag} loading="lazy" />
+              <span>{team.code}</span>
+              <small>
+                G{team.groupId} · {team.odds.advance}% adv
+              </small>
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function GroupButton({ active, group, model, onClick }) {
   const favorite = [...model.teams].sort((a, b) => model.odds[b.code].first - model.odds[a.code].first)[0];
 
@@ -697,8 +780,9 @@ function GroupButton({ active, group, model, onClick }) {
 }
 
 function GroupSummary({ model, onSelect }) {
-  const favorite = [...model.teams].sort((a, b) => model.odds[b.code].first - model.odds[a.code].first)[0];
-  const second = [...model.teams].sort((a, b) => model.odds[b.code].advance - model.odds[a.code].advance)[1];
+  const modelPick = getModelPick(model);
+  const favorite = getTeamByCode(model, modelPick.first);
+  const second = getTeamByCode(model, modelPick.second);
 
   return (
     <button className="group-summary" type="button" onClick={onSelect}>
@@ -706,7 +790,7 @@ function GroupSummary({ model, onSelect }) {
       <strong>{favorite.name}</strong>
       <small>
         Favorite {model.odds[favorite.code].first}% · rating {model.odds[favorite.code].rating} · next{" "}
-        {second.code} {model.odds[second.code].advance}%
+        {second.code} {model.odds[second.code].second}% 2nd
       </small>
     </button>
   );
@@ -717,8 +801,11 @@ function CreatorPanel({
   leaderboard,
   onRegister,
   onShare,
+  playerEmail,
   playerName,
   registered,
+  registerError,
+  setPlayerEmail,
   score,
   setPlayerName,
   shareLink,
@@ -737,10 +824,18 @@ function CreatorPanel({
             placeholder="username"
             value={playerName}
           />
+          <input
+            aria-label="Email"
+            onChange={(event) => setPlayerEmail(event.target.value)}
+            placeholder="email"
+            type="email"
+            value={playerEmail}
+          />
           <button type="button" onClick={onRegister}>
             {registered ? "Registered" : "Register"}
           </button>
         </div>
+        {registerError ? <p className="register-error">{registerError}</p> : null}
       </div>
 
       <div className="creator-stats">
@@ -780,8 +875,11 @@ function CreatorPanel({
 
 function App() {
   const [selectedGroup, setSelectedGroup] = useState("A");
+  const [selectedTeamCode, setSelectedTeamCode] = useState("KOR");
+  const [playerEmail, setPlayerEmail] = useState("");
   const [playerName, setPlayerName] = useState("");
   const [registered, setRegistered] = useState(false);
+  const [registerError, setRegisterError] = useState("");
   const [picks, setPicks] = useState({});
   const [knockoutPicks, setKnockoutPicks] = useState({});
   const [thirdPoolOverrides, setThirdPoolOverrides] = useState({});
@@ -792,7 +890,7 @@ function App() {
     () => Object.fromEntries(model.teams.map((team) => [team.code, team])),
     [model],
   );
-  const topTeam = [...model.teams].sort((a, b) => model.odds[b.code].first - model.odds[a.code].first)[0];
+  const topTeam = getTeamByCode(model, getModelPick(model).first);
   const swingFixture = model.fixtures
     .map((fixture) => ({
       ...fixture,
@@ -844,6 +942,7 @@ function App() {
       setKnockoutPicks(saved.knockoutPicks ?? {});
       setThirdPoolOverrides(saved.thirdPoolOverrides ?? {});
       setPlayerName(saved.playerName ?? "");
+      setPlayerEmail(saved.playerEmail ?? "");
       setRegistered(Boolean(saved.registered));
     }
     setLeaderboard(saved.leaderboard ?? []);
@@ -855,13 +954,14 @@ function App() {
       JSON.stringify({
         leaderboard,
         knockoutPicks,
+        playerEmail,
         picks,
         playerName,
         registered,
         thirdPoolOverrides,
       }),
     );
-  }, [knockoutPicks, leaderboard, picks, playerName, registered, thirdPoolOverrides]);
+  }, [knockoutPicks, leaderboard, picks, playerEmail, playerName, registered, thirdPoolOverrides]);
 
   const handlePick = (groupId, slot, code) => {
     setPicks((current) => {
@@ -927,16 +1027,33 @@ function App() {
 
   const handleRegister = () => {
     const cleanName = playerName.trim() || "anonymous";
+    const cleanEmail = playerEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setRegisterError("Enter a real email to register this bracket.");
+      setRegistered(false);
+      return;
+    }
+    const existingEmail = leaderboard.find(
+      (item) => item.email?.toLowerCase() === cleanEmail && item.name.toLowerCase() !== cleanName.toLowerCase(),
+    );
+    if (existingEmail) {
+      setRegisterError("That email already has a bracket on this device.");
+      setRegistered(false);
+      return;
+    }
     const entry = {
       completedGroups,
       createdAt: Date.now(),
+      email: cleanEmail,
       name: cleanName,
       score,
     };
     setPlayerName(cleanName);
+    setPlayerEmail(cleanEmail);
     setRegistered(true);
+    setRegisterError("");
     setLeaderboard((current) =>
-      [entry, ...current.filter((item) => item.name.toLowerCase() !== cleanName.toLowerCase())]
+      [entry, ...current.filter((item) => item.email?.toLowerCase() !== cleanEmail)]
         .sort((a, b) => b.score - a.score)
         .slice(0, 8),
     );
@@ -1063,8 +1180,11 @@ function App() {
           leaderboard={leaderboard}
           onRegister={handleRegister}
           onShare={handleShare}
+          playerEmail={playerEmail}
           playerName={playerName}
           registered={registered}
+          registerError={registerError}
+          setPlayerEmail={setPlayerEmail}
           score={score}
           setPlayerName={setPlayerName}
           shareLink={shareLink}
@@ -1148,22 +1268,14 @@ function App() {
         </div>
       </section>
 
-      <section className="analysis-grid">
-        <div className="korea-card">
-          <div className="section-head compact">
-            <div>
-              <p className="eyebrow">Korea card</p>
-              <h2>Where Group A is nervous</h2>
-            </div>
-            <ShieldAlert size={24} />
-          </div>
-          <div className="signal-grid">
-            {koreaSignals.map((signal) => (
-              <Signal signal={signal} key={signal.label} />
-            ))}
-          </div>
-        </div>
+      <TeamLab
+        models={allModels}
+        onSelect={setSelectedTeamCode}
+        onSelectGroup={setSelectedGroup}
+        selectedCode={selectedTeamCode}
+      />
 
+      <section className="analysis-grid notes-only">
         <div className="notes-panel">
           <div className="section-head compact">
             <div>

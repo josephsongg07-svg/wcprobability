@@ -327,6 +327,18 @@ const pairings = [
 
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 
+const normalize = (counts, total) =>
+  Object.fromEntries(Object.entries(counts).map(([code, count]) => [code, Math.round((count / total) * 100)]));
+
+const seededRandom = (seed) => {
+  let value = seed % 2147483647;
+  if (value <= 0) value += 2147483646;
+  return () => {
+    value = (value * 16807) % 2147483647;
+    return (value - 1) / 2147483646;
+  };
+};
+
 function matchProb(a, b) {
   const diff = a.adjustedSeed - b.adjustedSeed;
   const draw = clamp(27 - Math.abs(diff) * 0.12, 19, 29);
@@ -343,20 +355,97 @@ function matchProb(a, b) {
 }
 
 function teamOdds(group) {
+  const simulations = 6000;
+  const seed = group.id.charCodeAt(0) * 1009;
+  const random = seededRandom(seed);
+  const positionCounts = {
+    first: Object.fromEntries(group.teams.map((teamItem) => [teamItem.code, 0])),
+    second: Object.fromEntries(group.teams.map((teamItem) => [teamItem.code, 0])),
+    third: Object.fromEntries(group.teams.map((teamItem) => [teamItem.code, 0])),
+    fourth: Object.fromEntries(group.teams.map((teamItem) => [teamItem.code, 0])),
+  };
+  const expectedPoints = Object.fromEntries(group.teams.map((teamItem) => [teamItem.code, 0]));
+  const teamByIndex = Object.fromEntries(group.teams.map((teamItem, index) => [index, teamItem]));
+
+  for (let run = 0; run < simulations; run += 1) {
+    const table = Object.fromEntries(
+      group.teams.map((teamItem) => [
+        teamItem.code,
+        {
+          code: teamItem.code,
+          points: 0,
+          goalDiff: 0,
+          goalsFor: 0,
+          rating: teamItem.adjustedSeed,
+        },
+      ]),
+    );
+
+    pairings.forEach(([aIndex, bIndex]) => {
+      const a = teamByIndex[aIndex];
+      const b = teamByIndex[bIndex];
+      const probs = matchProb(a, b);
+      const roll = random() * 100;
+      const ratingGap = Math.abs(a.adjustedSeed - b.adjustedSeed);
+      const margin = ratingGap > 13 ? 2 : 1;
+
+      if (roll < probs[0][1]) {
+        table[a.code].points += 3;
+        table[a.code].goalDiff += margin;
+        table[a.code].goalsFor += margin + 1;
+        table[b.code].goalDiff -= margin;
+        table[b.code].goalsFor += 1;
+      } else if (roll < probs[0][1] + probs[1][1]) {
+        table[a.code].points += 1;
+        table[b.code].points += 1;
+        table[a.code].goalsFor += 1;
+        table[b.code].goalsFor += 1;
+      } else {
+        table[b.code].points += 3;
+        table[b.code].goalDiff += margin;
+        table[b.code].goalsFor += margin + 1;
+        table[a.code].goalDiff -= margin;
+        table[a.code].goalsFor += 1;
+      }
+    });
+
+    Object.values(table).forEach((row) => {
+      expectedPoints[row.code] += row.points;
+    });
+
+    const ordered = Object.values(table).sort(
+      (a, b) =>
+        b.points - a.points ||
+        b.goalDiff - a.goalDiff ||
+        b.goalsFor - a.goalsFor ||
+        b.rating - a.rating,
+    );
+    positionCounts.first[ordered[0].code] += 1;
+    positionCounts.second[ordered[1].code] += 1;
+    positionCounts.third[ordered[2].code] += 1;
+    positionCounts.fourth[ordered[3].code] += 1;
+  }
+
+  const first = normalize(positionCounts.first, simulations);
+  const second = normalize(positionCounts.second, simulations);
+  const third = normalize(positionCounts.third, simulations);
+  const fourth = normalize(positionCounts.fourth, simulations);
   const sorted = [...group.teams].sort((a, b) => b.adjustedSeed - a.adjustedSeed);
+
   return Object.fromEntries(
     group.teams.map((teamItem) => {
       const groupRank = sorted.findIndex((candidate) => candidate.code === teamItem.code) + 1;
-      const strengthGap = teamItem.adjustedSeed - sorted[0].adjustedSeed;
-      const advance = clamp(Math.round(48 + (teamItem.adjustedSeed - 68) * 1.9 + (5 - groupRank) * 3), 18, 93);
-      const first = clamp(Math.round(25 + strengthGap * 1.7 + (groupRank === 1 ? 12 : 0)), 4, 67);
-      const third = clamp(Math.round(46 - first * 0.32 - advance * 0.12), 8, 34);
+      const topTwo = first[teamItem.code] + second[teamItem.code];
+      const advance = clamp(Math.round(topTwo + third[teamItem.code] * 0.67), 1, 99);
       return [
         teamItem.code,
         {
           advance,
-          first,
-          third,
+          expectedPoints: Number((expectedPoints[teamItem.code] / simulations).toFixed(1)),
+          first: first[teamItem.code],
+          second: second[teamItem.code],
+          third: third[teamItem.code],
+          fourth: fourth[teamItem.code],
           rating: teamItem.adjustedSeed,
           baseRating: teamItem.seed,
           adjustment: teamItem.totalAdjustment,
@@ -395,18 +484,27 @@ export function getGroupModel(groupId) {
   };
 }
 
-export const koreaSignals = [
-  { label: "Attack", value: 78, tone: "good" },
-  { label: "Defense", value: 73, tone: "steady" },
-  { label: "Set-piece defense", value: 62, tone: "risk" },
-  { label: "Transition attack", value: 78, tone: "good" },
-  { label: "Aerial duels", value: 66, tone: "risk" },
-  { label: "Altitude prep", value: 74, tone: "steady" },
-];
+export const getTeamSignals = (teamItem, odds) => {
+  const attack = clamp(Math.round(teamItem.adjustedSeed * 0.72 + (teamItem.confed === "CONMEBOL" ? 12 : 7)), 42, 96);
+  const defense = clamp(Math.round(teamItem.adjustedSeed * 0.7 + (teamItem.confed === "UEFA" ? 12 : 8)), 42, 96);
+  const setPieces = clamp(Math.round(teamItem.adjustedSeed * 0.58 + (teamItem.rank <= 20 ? 21 : 17)), 38, 92);
+  const transition = clamp(Math.round(teamItem.adjustedSeed * 0.63 + (["AFC", "CAF", "CONCACAF"].includes(teamItem.confed) ? 19 : 16)), 40, 94);
+  const form = clamp(Math.round(odds.expectedPoints * 19 + odds.advance * 0.22), 35, 94);
+  const volatility = clamp(Math.round(100 - odds.advance * 0.54 + odds.third * 0.72 + odds.fourth * 0.18), 18, 85);
+
+  return [
+    { label: "Attack", value: attack, tone: attack >= 78 ? "good" : attack >= 66 ? "steady" : "risk" },
+    { label: "Defense", value: defense, tone: defense >= 78 ? "good" : defense >= 66 ? "steady" : "risk" },
+    { label: "Set pieces", value: setPieces, tone: setPieces >= 76 ? "good" : setPieces >= 63 ? "steady" : "risk" },
+    { label: "Transition", value: transition, tone: transition >= 76 ? "good" : transition >= 63 ? "steady" : "risk" },
+    { label: "Group form", value: form, tone: form >= 74 ? "good" : form >= 58 ? "steady" : "risk" },
+    { label: "Volatility", value: volatility, tone: volatility >= 64 ? "risk" : volatility >= 44 ? "steady" : "good" },
+  ];
+};
 
 export const marketNotes = [
   "Top two advance automatically; only eight of twelve third-place teams survive through the third-place pool.",
-  "Ratings now adjust for confederation difficulty, regional schedule quality, and host boost.",
-  "FIFA rank is shown, but the model prices teams from an adjusted strength number.",
-  "The next product step is letting users lock picks and price their bracket against the model.",
+  "Group probabilities now come from a deterministic 6,000-run fixture simulation, so 1st/2nd/3rd/4th probabilities stay internally consistent.",
+  "Autofill ranks teams by their simulated finish order instead of mixing separate probability columns.",
+  "Knockout seeding uses adjusted rating plus group-stage advancement strength, then users can override the third-place pool.",
 ];
