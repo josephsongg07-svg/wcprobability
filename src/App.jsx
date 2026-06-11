@@ -125,43 +125,166 @@ const getQualifiers = (models, picks, thirdPoolOverrides = {}) => {
   };
 };
 
-const seedQualifiers = (qualifiers) =>
-  [...qualifiers]
-    .sort((a, b) => b.strength - a.strength || b.tiebreak - a.tiebreak)
-    .map((team, index) => ({ ...team, bracketSeed: index + 1 }));
+const fifaRound32Slots = [
+  { matchNo: 73, slots: [{ finish: "second", groupId: "A" }, { finish: "second", groupId: "B" }] },
+  { matchNo: 75, slots: [{ finish: "first", groupId: "F" }, { finish: "second", groupId: "C" }] },
+  { matchNo: 74, slots: [{ finish: "first", groupId: "E" }, { finish: "third", eligibleGroups: ["A", "B", "C", "D", "F"] }] },
+  { matchNo: 77, slots: [{ finish: "first", groupId: "I" }, { finish: "third", eligibleGroups: ["C", "D", "F", "G", "H"] }] },
+  { matchNo: 83, slots: [{ finish: "second", groupId: "K" }, { finish: "second", groupId: "L" }] },
+  { matchNo: 84, slots: [{ finish: "first", groupId: "H" }, { finish: "second", groupId: "J" }] },
+  { matchNo: 81, slots: [{ finish: "first", groupId: "D" }, { finish: "third", eligibleGroups: ["B", "E", "F", "I", "J"] }] },
+  { matchNo: 82, slots: [{ finish: "first", groupId: "G" }, { finish: "third", eligibleGroups: ["A", "E", "H", "I", "J"] }] },
+  { matchNo: 76, slots: [{ finish: "first", groupId: "C" }, { finish: "second", groupId: "F" }] },
+  { matchNo: 78, slots: [{ finish: "second", groupId: "E" }, { finish: "second", groupId: "I" }] },
+  { matchNo: 79, slots: [{ finish: "first", groupId: "A" }, { finish: "third", eligibleGroups: ["C", "E", "F", "H", "I"] }] },
+  { matchNo: 80, slots: [{ finish: "first", groupId: "L" }, { finish: "third", eligibleGroups: ["E", "H", "I", "J", "K"] }] },
+  { matchNo: 86, slots: [{ finish: "first", groupId: "J" }, { finish: "second", groupId: "H" }] },
+  { matchNo: 88, slots: [{ finish: "second", groupId: "D" }, { finish: "second", groupId: "G" }] },
+  { matchNo: 85, slots: [{ finish: "first", groupId: "B" }, { finish: "third", eligibleGroups: ["E", "F", "G", "I", "J"] }] },
+  { matchNo: 87, slots: [{ finish: "first", groupId: "K" }, { finish: "third", eligibleGroups: ["D", "E", "I", "J", "L"] }] },
+];
 
-const makeMatches = (roundKey, entrants) => {
-  const matches = [];
-  for (let index = 0; index < entrants.length / 2; index += 1) {
-    matches.push({
-      id: `${roundKey}-${index}`,
-      roundKey,
-      teams: [entrants[index] ?? null, entrants[entrants.length - 1 - index] ?? null],
-    });
-  }
-  return matches;
+const fifaNextRoundSlots = {
+  round16: [
+    { matchNo: 89, sourceMatches: [73, 75] },
+    { matchNo: 90, sourceMatches: [74, 77] },
+    { matchNo: 93, sourceMatches: [83, 84] },
+    { matchNo: 94, sourceMatches: [81, 82] },
+    { matchNo: 91, sourceMatches: [76, 78] },
+    { matchNo: 92, sourceMatches: [79, 80] },
+    { matchNo: 95, sourceMatches: [86, 88] },
+    { matchNo: 96, sourceMatches: [85, 87] },
+  ],
+  quarterfinals: [
+    { matchNo: 97, sourceMatches: [89, 90] },
+    { matchNo: 98, sourceMatches: [93, 94] },
+    { matchNo: 99, sourceMatches: [91, 92] },
+    { matchNo: 100, sourceMatches: [95, 96] },
+  ],
+  semifinals: [
+    { matchNo: 101, sourceMatches: [97, 98] },
+    { matchNo: 102, sourceMatches: [99, 100] },
+  ],
+  final: [{ matchNo: 104, sourceMatches: [101, 102] }],
 };
 
-const pickWinners = (matches, knockoutPicks) =>
-  matches.map((match) => {
-    const selected = knockoutPicks[match.id];
-    return match.teams.find((team) => team?.code === selected) ?? null;
+const finishLabels = {
+  first: "winner",
+  second: "runner-up",
+  third: "3rd place",
+};
+
+const makeFifaMatch = (roundKey, matchNo, teams, sourceMatches = []) => ({
+  id: `${roundKey}-${matchNo}`,
+  matchNo,
+  roundKey,
+  sourceMatches,
+  teams,
+});
+
+const getPickedGroupTeam = (models, picks, groupId, finish) => {
+  const model = models.find((item) => item.id === groupId);
+  if (!model) return null;
+  const code = picks[groupId]?.[finish];
+  return makeBracketTeam(models, model, code, `Group ${groupId} ${finishLabels[finish]}`);
+};
+
+const assignThirdPlaceSlots = (thirdPlaceSlots, qualifiedThirds) => {
+  const orderedSlotIndexes = thirdPlaceSlots
+    .map((slot, index) => ({ ...slot, index }))
+    .sort((a, b) => a.eligibleGroups.length - b.eligibleGroups.length || a.index - b.index);
+  const assignment = {};
+  const usedCodes = new Set();
+
+  const backtrack = (slotIndex) => {
+    if (slotIndex === orderedSlotIndexes.length) return true;
+    const slot = orderedSlotIndexes[slotIndex];
+    const candidates = qualifiedThirds.filter(
+      (team) => slot.eligibleGroups.includes(team.groupId) && !usedCodes.has(team.code),
+    );
+
+    for (const team of candidates) {
+      assignment[slot.index] = team;
+      usedCodes.add(team.code);
+      if (backtrack(slotIndex + 1)) return true;
+      usedCodes.delete(team.code);
+      delete assignment[slot.index];
+    }
+
+    return false;
+  };
+
+  if (backtrack(0)) return assignment;
+
+  thirdPlaceSlots.forEach((slot, index) => {
+    const team = qualifiedThirds.find((item) => slot.eligibleGroups.includes(item.groupId) && !usedCodes.has(item.code));
+    if (team) {
+      assignment[index] = team;
+      usedCodes.add(team.code);
+    }
   });
+
+  return assignment;
+};
+
+const buildRound32 = (models, picks, qualifiedThirds) => {
+  const thirdPlaceSlots = fifaRound32Slots.flatMap((match) =>
+    match.slots
+      .map((slot, slotIndex) => ({ ...slot, matchNo: match.matchNo, slotIndex }))
+      .filter((slot) => slot.finish === "third"),
+  );
+  const thirdAssignments = assignThirdPlaceSlots(thirdPlaceSlots, qualifiedThirds);
+  let thirdSlotIndex = 0;
+
+  return fifaRound32Slots.map((match) =>
+    makeFifaMatch(
+      "round32",
+      match.matchNo,
+      match.slots.map((slot) => {
+        if (slot.finish === "third") {
+          const team = thirdAssignments[thirdSlotIndex] ?? null;
+          thirdSlotIndex += 1;
+          return team;
+        }
+
+        return getPickedGroupTeam(models, picks, slot.groupId, slot.finish);
+      }),
+    ),
+  );
+};
+
+const getMatchWinner = (match, knockoutPicks) => {
+  const selected = knockoutPicks[match.id];
+  return match.teams.find((team) => team?.code === selected) ?? null;
+};
+
+const buildFifaRound = (roundKey, previousMatchesByNumber, knockoutPicks) =>
+  fifaNextRoundSlots[roundKey].map((slot) =>
+    makeFifaMatch(
+      roundKey,
+      slot.matchNo,
+      slot.sourceMatches.map((matchNo) => {
+        const sourceMatch = previousMatchesByNumber[matchNo];
+        return sourceMatch ? getMatchWinner(sourceMatch, knockoutPicks) : null;
+      }),
+      slot.sourceMatches,
+    ),
+  );
+
+const indexMatchesByNumber = (matches) => Object.fromEntries(matches.map((match) => [match.matchNo, match]));
 
 const buildKnockoutRounds = (models, picks, knockoutPicks, thirdPoolOverrides = {}) => {
   const { automatic, qualifiedThirds, thirdPool } = getQualifiers(models, picks, thirdPoolOverrides);
-  const seeded = seedQualifiers([...automatic, ...qualifiedThirds]);
-  const padded = [...seeded, ...Array.from({ length: Math.max(0, 32 - seeded.length) }, () => null)];
-  const round32 = makeMatches("round32", padded);
-  const round16 = makeMatches("round16", pickWinners(round32, knockoutPicks));
-  const quarterfinals = makeMatches("quarterfinals", pickWinners(round16, knockoutPicks));
-  const semifinals = makeMatches("semifinals", pickWinners(quarterfinals, knockoutPicks));
-  const final = makeMatches("final", pickWinners(semifinals, knockoutPicks));
-  const champion = pickWinners(final, knockoutPicks)[0];
+  const round32 = buildRound32(models, picks, qualifiedThirds);
+  const round16 = buildFifaRound("round16", indexMatchesByNumber(round32), knockoutPicks);
+  const quarterfinals = buildFifaRound("quarterfinals", indexMatchesByNumber(round16), knockoutPicks);
+  const semifinals = buildFifaRound("semifinals", indexMatchesByNumber(quarterfinals), knockoutPicks);
+  const final = buildFifaRound("final", indexMatchesByNumber(semifinals), knockoutPicks);
+  const champion = getMatchWinner(final[0], knockoutPicks);
 
   return {
     champion,
-    qualifiedCount: seeded.filter(Boolean).length,
+    qualifiedCount: automatic.length + qualifiedThirds.length,
     qualifiedThirds,
     rounds: { round32, round16, quarterfinals, semifinals, final },
     thirdPool,
@@ -434,9 +557,7 @@ function BracketTeamButton({ match, onPick, team, winnerCode }) {
         <img alt="" src={team.flag} loading="lazy" />
         <b>{team.name}</b>
       </span>
-      <small>
-        #{team.bracketSeed ?? "-"} · {team.source}
-      </small>
+      <small>{team.source}</small>
     </button>
   );
 }
@@ -449,7 +570,7 @@ function BracketRoundColumn({ align = "left", matches, onPick, roundKey, startIn
         {matches.map((match, index) => (
           <article className="knockout-match" key={match.id}>
             <span className="match-label">
-              {shortRoundLabels[roundKey]} {startIndex + index + 1}
+              {match.matchNo ? `M${match.matchNo}` : `${shortRoundLabels[roundKey]} ${startIndex + index + 1}`}
             </span>
             {match.teams.map((team, teamIndex) => (
               <BracketTeamButton
@@ -549,7 +670,7 @@ function KnockoutBracket({ knockoutPicks, models, onAuto, onClear, onPick, picks
           <div className="final-column">
             <h3>The final</h3>
             <article className="knockout-match final-match">
-              <span className="match-label">Final</span>
+              <span className="match-label">M{bracket.rounds.final[0].matchNo}</span>
               {bracket.rounds.final[0].teams.map((team, teamIndex) => (
                 <BracketTeamButton
                   key={`final-${team?.code ?? teamIndex}`}
