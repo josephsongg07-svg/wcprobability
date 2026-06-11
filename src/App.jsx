@@ -15,6 +15,14 @@ import { getGroupModel, getTeamSignals, groups, marketNotes } from "./data.js";
 const storageKey = "wcprobability-bracket-v1";
 const bracketSlots = ["first", "second", "third", "fourth"];
 const roundLabels = {
+  round32: "Round of 32",
+  round16: "Round of 16",
+  quarterfinals: "Quarter final",
+  semifinals: "Semi final",
+  final: "Final",
+};
+
+const shortRoundLabels = {
   round32: "R32",
   round16: "R16",
   quarterfinals: "QF",
@@ -424,12 +432,38 @@ function BracketTeamButton({ match, onPick, team, winnerCode }) {
     >
       <span>
         <img alt="" src={team.flag} loading="lazy" />
-        <b>{team.code}</b>
+        <b>{team.name}</b>
       </span>
       <small>
         #{team.bracketSeed ?? "-"} · {team.source}
       </small>
     </button>
+  );
+}
+
+function BracketRoundColumn({ align = "left", matches, onPick, roundKey, startIndex = 0, knockoutPicks }) {
+  return (
+    <div className={`knockout-round ${align === "right" ? "mirror" : ""}`}>
+      <h3>{roundLabels[roundKey]}</h3>
+      <div className="knockout-matches">
+        {matches.map((match, index) => (
+          <article className="knockout-match" key={match.id}>
+            <span className="match-label">
+              {shortRoundLabels[roundKey]} {startIndex + index + 1}
+            </span>
+            {match.teams.map((team, teamIndex) => (
+              <BracketTeamButton
+                key={`${match.id}-${team?.code ?? teamIndex}`}
+                match={match}
+                onPick={onPick}
+                team={team}
+                winnerCode={knockoutPicks[match.id]}
+              />
+            ))}
+          </article>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -439,6 +473,21 @@ function KnockoutBracket({ knockoutPicks, models, onAuto, onClear, onPick, picks
     [knockoutPicks, models, picks, thirdPoolOverrides],
   );
   const qualifiedThirdCodes = new Set(bracket.qualifiedThirds.map((team) => team.code));
+  const leftRounds = [
+    { roundKey: "round32", matches: bracket.rounds.round32.slice(0, 8), startIndex: 0 },
+    { roundKey: "round16", matches: bracket.rounds.round16.slice(0, 4), startIndex: 0 },
+    { roundKey: "quarterfinals", matches: bracket.rounds.quarterfinals.slice(0, 2), startIndex: 0 },
+    { roundKey: "semifinals", matches: bracket.rounds.semifinals.slice(0, 1), startIndex: 0 },
+  ];
+  const rightRounds = [
+    { roundKey: "semifinals", matches: bracket.rounds.semifinals.slice(1, 2), startIndex: 1 },
+    { roundKey: "quarterfinals", matches: bracket.rounds.quarterfinals.slice(2, 4), startIndex: 2 },
+    { roundKey: "round16", matches: bracket.rounds.round16.slice(4, 8), startIndex: 4 },
+    { roundKey: "round32", matches: bracket.rounds.round32.slice(8, 16), startIndex: 8 },
+  ];
+  const runnerUp = bracket.champion
+    ? bracket.rounds.final[0]?.teams.find((team) => team && team.code !== bracket.champion.code)
+    : null;
 
   return (
     <section className="knockout-board" aria-label="Interactive knockout bracket">
@@ -461,46 +510,69 @@ function KnockoutBracket({ knockoutPicks, models, onAuto, onClear, onPick, picks
         </div>
       </div>
 
+      <div className="champion-banner">
+        <p className="eyebrow">
+          <Trophy size={13} />
+          Predicted champion
+        </p>
+        {bracket.champion ? (
+          <div className="champion-banner-main">
+            <img alt="" src={bracket.champion.flag} loading="lazy" />
+            <strong>{bracket.champion.name}</strong>
+          </div>
+        ) : (
+          <div className="champion-banner-main muted">
+            <Trophy size={30} />
+            <strong>TBD</strong>
+          </div>
+        )}
+        <div className="champion-banner-meta">
+          <span>Runner-up {runnerUp ? `${runnerUp.name}` : "TBD"}</span>
+          <span>{bracket.qualifiedCount}/32 qualified</span>
+        </div>
+      </div>
+
       <div className="knockout-scroll">
-        <div className="knockout-rounds">
-          {Object.entries(bracket.rounds).map(([roundKey, matches]) => (
-            <div className="knockout-round" key={roundKey}>
-              <h3>{roundLabels[roundKey]}</h3>
-              <div className="knockout-matches">
-                {matches.map((match, index) => (
-                  <article className="knockout-match" key={match.id}>
-                    <span className="match-label">
-                      {roundLabels[roundKey]} {index + 1}
-                    </span>
-                    {match.teams.map((team, teamIndex) => (
-                      <BracketTeamButton
-                        key={`${match.id}-${team?.code ?? teamIndex}`}
-                        match={match}
-                        onPick={onPick}
-                        team={team}
-                        winnerCode={knockoutPicks[match.id]}
-                      />
-                    ))}
-                  </article>
-                ))}
-              </div>
-            </div>
-          ))}
-          <div className="champion-card">
-            <p className="eyebrow">Champion</p>
-            {bracket.champion ? (
-              <>
-                <img alt="" src={bracket.champion.flag} loading="lazy" />
-                <strong>{bracket.champion.name}</strong>
-                <span>{bracket.champion.source}</span>
-              </>
-            ) : (
-              <>
-                <Trophy size={34} />
-                <strong>TBD</strong>
-                <span>Pick the final winner</span>
-              </>
-            )}
+        <div className="knockout-canvas">
+          <div className="bracket-side left">
+            {leftRounds.map((round) => (
+              <BracketRoundColumn
+                key={`left-${round.roundKey}`}
+                knockoutPicks={knockoutPicks}
+                matches={round.matches}
+                onPick={onPick}
+                roundKey={round.roundKey}
+                startIndex={round.startIndex}
+              />
+            ))}
+          </div>
+          <div className="final-column">
+            <h3>The final</h3>
+            <article className="knockout-match final-match">
+              <span className="match-label">Final</span>
+              {bracket.rounds.final[0].teams.map((team, teamIndex) => (
+                <BracketTeamButton
+                  key={`final-${team?.code ?? teamIndex}`}
+                  match={bracket.rounds.final[0]}
+                  onPick={onPick}
+                  team={team}
+                  winnerCode={knockoutPicks[bracket.rounds.final[0].id]}
+                />
+              ))}
+            </article>
+          </div>
+          <div className="bracket-side right">
+            {rightRounds.map((round) => (
+              <BracketRoundColumn
+                align="right"
+                key={`right-${round.roundKey}`}
+                knockoutPicks={knockoutPicks}
+                matches={round.matches}
+                onPick={onPick}
+                roundKey={round.roundKey}
+                startIndex={round.startIndex}
+              />
+            ))}
           </div>
         </div>
       </div>
