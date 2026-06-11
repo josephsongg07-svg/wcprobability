@@ -1363,10 +1363,22 @@ meter::-webkit-meter-optimum-value {
   font-weight: 800;
 }
 
-.register-error {
+.register-error,
+.register-notice {
   grid-column: 2;
   margin: -8px 0 0;
   color: #b91c1c;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.register-notice,
+.share-notice {
+  color: #0f8a5f;
+}
+
+.share-notice {
+  margin: -8px 0 0;
   font-size: 12px;
   font-weight: 850;
 }
@@ -1407,8 +1419,17 @@ meter::-webkit-meter-optimum-value {
 }
 
 .creator-stats strong {
+  display: block;
   color: #111827;
   font-size: 24px;
+}
+
+.creator-stats small {
+  display: block;
+  margin-top: 4px;
+  color: #607086;
+  font-size: 12px;
+  font-weight: 800;
 }
 
 .leaderboard-strip {
@@ -1911,7 +1932,8 @@ meter::-webkit-meter-optimum-value {
     grid-template-columns: 1fr;
   }
 
-  .register-error {
+  .register-error,
+  .register-notice {
     grid-column: auto;
   }
 

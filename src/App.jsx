@@ -996,12 +996,14 @@ function CreatorPanel({
   onShare,
   playerEmail,
   playerName,
+  registerNotice,
   registered,
   registerError,
   setPlayerEmail,
   score,
   setPlayerName,
   shareLink,
+  shareNotice,
 }) {
   return (
     <section className="creator-panel" aria-label="Create bracket">
@@ -1025,10 +1027,11 @@ function CreatorPanel({
             value={playerEmail}
           />
           <button type="button" onClick={onRegister}>
-            {registered ? "Registered" : "Register"}
+            {registered ? "Update" : "Register"}
           </button>
         </div>
         {registerError ? <p className="register-error">{registerError}</p> : null}
+        {registerNotice ? <p className="register-notice">{registerNotice}</p> : null}
       </div>
 
       <div className="creator-stats">
@@ -1042,7 +1045,8 @@ function CreatorPanel({
         </div>
         <div>
           <span>Status</span>
-          <strong>{registered ? "Live entry" : "Draft"}</strong>
+          <strong>{registered ? "Device entry" : "Draft"}</strong>
+          <small>{registered ? "Saved locally" : "Complete bracket first"}</small>
         </div>
       </div>
 
@@ -1052,6 +1056,7 @@ function CreatorPanel({
           Share
         </button>
       </div>
+      {shareNotice ? <p className="share-notice">{shareNotice}</p> : null}
 
       <div className="leaderboard-strip">
         {leaderboard.slice(0, 4).map((entry, index) => (
@@ -1072,7 +1077,10 @@ function App() {
   const [playerEmail, setPlayerEmail] = useState("");
   const [playerName, setPlayerName] = useState("");
   const [registered, setRegistered] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState("");
   const [registerError, setRegisterError] = useState("");
+  const [registerNotice, setRegisterNotice] = useState("");
+  const [shareNotice, setShareNotice] = useState("");
   const [picks, setPicks] = useState({});
   const [knockoutPicks, setKnockoutPicks] = useState({});
   const [thirdPoolOverrides, setThirdPoolOverrides] = useState({});
@@ -1137,6 +1145,7 @@ function App() {
       setPlayerName(saved.playerName ?? "");
       setPlayerEmail(saved.playerEmail ?? "");
       setRegistered(Boolean(saved.registered));
+      setRegisteredEmail(saved.registeredEmail ?? (saved.registered ? saved.playerEmail ?? "" : ""));
     }
     setLeaderboard(saved.leaderboard ?? []);
   }, []);
@@ -1151,10 +1160,11 @@ function App() {
         picks,
         playerName,
         registered,
+        registeredEmail,
         thirdPoolOverrides,
       }),
     );
-  }, [knockoutPicks, leaderboard, picks, playerEmail, playerName, registered, thirdPoolOverrides]);
+  }, [knockoutPicks, leaderboard, picks, playerEmail, playerName, registered, registeredEmail, thirdPoolOverrides]);
 
   const handlePick = (groupId, slot, code) => {
     setPicks((current) => {
@@ -1183,6 +1193,9 @@ function App() {
     setKnockoutPicks({});
     setThirdPoolOverrides({});
     setRegistered(false);
+    setRegisteredEmail("");
+    setRegisterNotice("");
+    setShareNotice("");
   };
 
   const handleKnockoutPick = (matchId, code) => {
@@ -1221,15 +1234,25 @@ function App() {
   const handleRegister = () => {
     const cleanName = playerName.trim() || "anonymous";
     const cleanEmail = playerEmail.trim().toLowerCase();
+
+    setRegisterNotice("");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       setRegisterError("Enter a real email to register this bracket.");
       setRegistered(false);
       return;
     }
-    const existingEmail = leaderboard.find(
-      (item) => item.email?.toLowerCase() === cleanEmail && item.name.toLowerCase() !== cleanName.toLowerCase(),
-    );
-    if (existingEmail) {
+    if (completedGroups < groups.length) {
+      setRegisterError(`Pick all ${groups.length} groups before registering.`);
+      setRegistered(false);
+      return;
+    }
+    if (!highlights.champion) {
+      setRegisterError("Run the model bracket or pick through the final before registering.");
+      setRegistered(false);
+      return;
+    }
+    const existingEmail = leaderboard.find((item) => item.email?.toLowerCase() === cleanEmail);
+    if (existingEmail && (!registered || cleanEmail !== registeredEmail)) {
       setRegisterError("That email already has a bracket on this device.");
       setRegistered(false);
       return;
@@ -1244,7 +1267,9 @@ function App() {
     setPlayerName(cleanName);
     setPlayerEmail(cleanEmail);
     setRegistered(true);
+    setRegisteredEmail(cleanEmail);
     setRegisterError("");
+    setRegisterNotice("Bracket saved on this device. Share the link to let someone else open it.");
     setLeaderboard((current) =>
       [entry, ...current.filter((item) => item.email?.toLowerCase() !== cleanEmail)]
         .sort((a, b) => b.score - a.score)
@@ -1253,12 +1278,20 @@ function App() {
   };
 
   const handleShare = async () => {
-    const text = `My World Cup bracket: ${shareLink}`;
-    if (navigator.share) {
-      await navigator.share({ title: "WC Probability bracket", text, url: shareLink });
-      return;
+    const championText = highlights.champion ? ` Champion: ${highlights.champion.name}.` : "";
+    const text = `My 2026 World Cup bracket on WC Probability.${championText} Build yours: ${shareLink}`;
+    try {
+      if (navigator.share) {
+        await navigator.share({ title: "WC Probability bracket", text, url: shareLink });
+        setShareNotice("Share sheet opened.");
+        return;
+      }
+      await navigator.clipboard.writeText(text);
+      setShareNotice("Share text copied.");
+    } catch {
+      await navigator.clipboard.writeText(shareLink);
+      setShareNotice("Share link copied.");
     }
-    await navigator.clipboard.writeText(shareLink);
   };
 
   return (
@@ -1375,12 +1408,14 @@ function App() {
           onShare={handleShare}
           playerEmail={playerEmail}
           playerName={playerName}
+          registerNotice={registerNotice}
           registered={registered}
           registerError={registerError}
           setPlayerEmail={setPlayerEmail}
           score={score}
           setPlayerName={setPlayerName}
           shareLink={shareLink}
+          shareNotice={shareNotice}
         />
       </section>
 

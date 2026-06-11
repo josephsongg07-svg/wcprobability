@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="WC Probability">
+  <rect width="64" height="64" rx="12" fill="#070d18"/>
+  <circle cx="32" cy="31" r="20" fill="#f8fafc"/>
+  <path d="M32 11 43 20 39 34H25L21 20 32 11Z" fill="#0f8a5f"/>
+  <path d="M25 34 16 41 24 52H40L48 41 39 34H25Z" fill="#d6a83d"/>
+  <text x="32" y="38" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="900" fill="#070d18">WC</text>
+</svg>
